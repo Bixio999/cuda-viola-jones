@@ -1,5 +1,6 @@
 #include <stdlib.h>
 #include <stdio.h>
+#include <math.h>
 
 #include "image.h"
 
@@ -17,8 +18,9 @@ pel** readBMP_RGB(char* filename) {
 	int width = *(int*) &HeaderInfo[18];
 	int height = *(int*) &HeaderInfo[22];
 
+	unsigned int i;
 	//copy header for re-use
-	for (unsigned int i = 0; i < 54; i++)
+	for (i = 0; i < 54; i++)
 		im.header[i] = HeaderInfo[i];
 
 	im.height = height;
@@ -30,12 +32,11 @@ pel** readBMP_RGB(char* filename) {
 	printf("\n   Input BMP File name: %20s  (%u x %u)", filename, im.height,
 			im.width);
 
-	pel tmp;
 	pel **TheImage = (pel **) malloc(height * sizeof(pel*));
-	for (unsigned int i = 0; i < height; i++)
+	for (i = 0; i < height; i++)
 		TheImage[i] = (pel *) malloc(RowBytes * sizeof(pel));
 
-	for (unsigned int i = 0; i < height; i++)
+	for (i = 0; i < height; i++)
 		fread(TheImage[i], sizeof(unsigned char), RowBytes, f);
 
 	fclose(f);
@@ -57,7 +58,8 @@ pel** readBMP_grey(char* filename) {
 	int height = *(int*) &HeaderInfo[22];
 
 	//copy header for re-use
-	for (unsigned int i = 0; i < 54; i++)
+	unsigned int i;
+	for (i = 0; i < 54; i++)
 		im.header[i] = HeaderInfo[i];
 
 	im.height = height;
@@ -71,10 +73,10 @@ pel** readBMP_grey(char* filename) {
 
 	pel tmp;
 	pel **TheImage = (pel **) malloc(height * sizeof(pel*));
-	for (unsigned int i = 0; i < height; i++)
+	for (i = 0; i < height; i++)
 		TheImage[i] = (pel *) malloc(RowBytes * sizeof(pel));
 
-	for (unsigned int i = 0; i < height; i++)
+	for (i = 0; i < height; i++)
 		fread(TheImage[i], sizeof(unsigned char), RowBytes, f);
 
 	fclose(f);
@@ -91,19 +93,50 @@ void writeBMP(pel** img, char* filename) {
 		exit(1);
 	}
 
+	unsigned int x;
 	//write header
-	for (unsigned int x = 0; x < 54; x++)
+	for (x = 0; x < 54; x++)
 		fputc(im.header[x], f);
 
+	unsigned int y;
 	//write data
-	for (unsigned int x = 0; x < im.height; x++)
-		for (unsigned int y = 0; y < im.width; y++) {
+	for (x = 0; x < im.height; x++)
+		for (y = 0; y < im.width; y++) {
 			char temp = img[x][y];
 			fputc(temp, f);
 		}
 
-	printf("\n  Output BMP File name: %20s  (%u x %u)", filename, im.width,
-			im.height);
+	printf("\n  Output BMP File name: %20s  (%u x %u)", filename, im.height,
+			im.width);
 
 	fclose(f);
+}
+
+pel** rgb2grey(pel** image)
+{
+	pel** grey_image = (pel**) malloc( im.height * sizeof(pel *));
+	unsigned int i;
+	for (i = 0; i < im.height; i++)
+		grey_image[i] = (pel*) malloc(im.width * sizeof(pel));
+
+	unsigned int j, k;
+	for (j = 0; j < im.height; j ++)
+	{
+		for (i = 0; i < im.width; i++)
+		{
+			k = i * 3;
+
+			size_t r,g,b;
+			r = image[j][k+2];
+			g = image[j][k+1];
+			b = image[j][k];
+
+			grey_image[j][i] = (pel) round(0.3f * r + 0.59f * g + 0.11f * b); // luminance formula
+		}
+	}
+
+	im.h_offset = im.width;
+	im.type = "GREY";
+
+	return grey_image;
 }

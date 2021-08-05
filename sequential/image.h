@@ -20,5 +20,6 @@ typedef unsigned char pel;
 pel** readBMP_RGB(char*);
 pel** readBMP_grey(char*);
 void writeBMP(pel**, char*);
+pel** rgb2grey(pel**);
 
 extern struct Image im;
