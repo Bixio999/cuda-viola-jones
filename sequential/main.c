@@ -5,7 +5,8 @@
 
 #include "image.h"
 
-// #include <opencv/cv.h>
+#include <opencv2/objdetect/objdetect_c.h>
+// #include <opencv2/core/core_c.h>
 
 struct Image im;
 
@@ -59,9 +60,41 @@ int main(int argc, char const *argv[])
         printf("\n[ERROR] image not found or unable to correctly read.");
         exit(1);
     }
-    else
-        writeBMP(image, "read_image.bmp");
+    
+    int **int_image = integral_image(image);
+    printf("\nintegral image computated.\n");
 
+    CvMemStorage *storage = (CvMemStorage *) malloc(sizeof(CvGraph));
+
+    CvHaarClassifierCascade* face_cascade = cvLoad("../haarcascade_frontalface_default.xml", storage, NULL, NULL);
+    if (face_cascade == NULL)
+        printf("\n haar classifier not loaded.");
     
-    
+}
+
+int** integral_image(pel** image)
+{
+    if (image == NULL)
+        return NULL;
+
+    int** iim = (int**) malloc(im.height * sizeof(int*));
+    unsigned int i;
+    for (i = 0; i < im.height; i++)
+        iim[i] = (int *) malloc(im.width * sizeof(int));
+
+    iim[0][0] = image[0][0];
+
+    unsigned int j;
+    for (i = 1; i < im.height; i++)
+        iim[i][0] = iim[i-1][0] + image[i][0];
+
+    for (i = 1; i < im.width; i++)
+        iim[0][i] = iim[0][i-1] + image[0][i];
+
+    for (i = 1; i < im.height; i++)
+    {
+        for (j = 1; j < im.width; j++)
+            iim[i][j] = iim[i-1][j] + iim[i][j-1] + image[i][j];
+    }
+    return iim;
 }
