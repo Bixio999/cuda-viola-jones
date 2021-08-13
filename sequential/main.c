@@ -5,12 +5,14 @@
 
 #include "image.h"
 
-#include <opencv2/objdetect/objdetect_c.h>
+// #include <opencv2/objdetect/objdetect_c.h>
 // #include <opencv2/core/core_c.h>
 
 struct Image im;
 
 int** integral_image(pel** image);
+
+// void checkEyeFeature(pel** image);
 
 int main(int argc, char const *argv[])
 {
@@ -63,13 +65,8 @@ int main(int argc, char const *argv[])
     
     int **int_image = integral_image(image);
     printf("\nintegral image computated.\n");
-
-    CvMemStorage *storage = (CvMemStorage *) malloc(sizeof(CvGraph));
-
-    CvHaarClassifierCascade* face_cascade = cvLoad("../haarcascade_frontalface_default.xml", storage, NULL, NULL);
-    if (face_cascade == NULL)
-        printf("\n haar classifier not loaded.");
     
+    writeBMP(image, "read_image.bmp");
 }
 
 int** integral_image(pel** image)

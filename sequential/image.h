@@ -6,6 +6,7 @@ struct Image
     unsigned char header[54];
     unsigned long int h_offset;
     char* type;
+    size_t bitColour;
 };
 
 struct Pixel

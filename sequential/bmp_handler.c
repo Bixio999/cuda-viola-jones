@@ -1,6 +1,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <math.h>
+#include <string.h>
 
 #include "image.h"
 
@@ -28,6 +29,7 @@ pel** readBMP_RGB(char* filename) {
 	int RowBytes = (width * 3 + 3) & (~3);
 	im.h_offset = RowBytes;
     im.type = "RGB";
+	im.bitColour = 24;
 
 	printf("\n   Input BMP File name: %20s  (%u x %u)", filename, im.height,
 			im.width);
@@ -100,11 +102,30 @@ void writeBMP(pel** img, char* filename) {
 
 	unsigned int y;
 	//write data
-	for (x = 0; x < im.height; x++)
-		for (y = 0; y < im.width; y++) {
-			char temp = img[x][y];
-			fputc(temp, f);
+
+	if (im.bitColour <= 8)
+	{
+		printf("\nwriting 8bit image...");
+		for (x = 0; x < im.height; x++)
+		{
+			for (y = 0; y < im.width; y++) {
+				char temp = img[x][y];
+				fputc(temp, f);
+			}
 		}
+	}
+	else
+	{
+		printf("\nwriting 24bit image...");
+		for (x = 0; x < im.height; x++)
+		{
+			for (y = 0; y < im.h_offset; y++) {
+				char temp = img[x][y];
+				fputc(temp, f);
+			}
+		}
+	}
+	
 
 	printf("\n  Output BMP File name: %20s  (%u x %u)", filename, im.height,
 			im.width);
@@ -117,7 +138,7 @@ pel** rgb2grey(pel** image)
 	pel** grey_image = (pel**) malloc( im.height * sizeof(pel *));
 	unsigned int i;
 	for (i = 0; i < im.height; i++)
-		grey_image[i] = (pel*) malloc(im.width * sizeof(pel));
+		grey_image[i] = (pel*) malloc(im.h_offset * sizeof(pel));
 
 	unsigned int j, k;
 	for (j = 0; j < im.height; j ++)
@@ -126,17 +147,21 @@ pel** rgb2grey(pel** image)
 		{
 			k = i * 3;
 
-			size_t r,g,b;
+			size_t r,g,b, grey_val;
 			r = image[j][k+2];
 			g = image[j][k+1];
 			b = image[j][k];
 
-			grey_image[j][i] = (pel) round(0.3f * r + 0.59f * g + 0.11f * b); // luminance formula
+			grey_val = (pel) round(0.3f * r + 0.59f * g + 0.11f * b); // luminance formula
+
+			grey_image[j][k] = grey_val;
+			grey_image[j][k+1] = grey_val;
+			grey_image[j][k+2] = grey_val;
 		}
 	}
 
-	im.h_offset = im.width;
 	im.type = "GREY";
+	im.bitColour = 8;
 
 	return grey_image;
 }
