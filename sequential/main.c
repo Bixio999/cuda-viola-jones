@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
+#include <math.h>
 
 #include "image.h"
 
@@ -10,9 +11,9 @@
 
 struct Image im;
 
-int** integral_image(pel** image);
+double** integral_image(pel** image);
 
-// void checkEyeFeature(pel** image);
+void checkEyeFeature(double** int_image, pel** image);
 
 int main(int argc, char const *argv[])
 {
@@ -63,21 +64,24 @@ int main(int argc, char const *argv[])
         exit(1);
     }
     
-    int **int_image = integral_image(image);
+    double **int_image = integral_image(image);
     printf("\nintegral image computated.\n");
+
+    checkEyeFeature(int_image, image);
+
+    writeBMP(image, "check_eyes.bmp");
     
-    writeBMP(image, "read_image.bmp");
 }
 
-int** integral_image(pel** image)
+double** integral_image(pel** image)
 {
     if (image == NULL)
         return NULL;
 
-    int** iim = (int**) malloc(im.height * sizeof(int*));
+    double** iim = (double**) malloc(im.height * sizeof(double*));
     unsigned int i;
     for (i = 0; i < im.height; i++)
-        iim[i] = (int *) malloc(im.width * sizeof(int));
+        iim[i] = (double *) malloc(im.width * sizeof(double));
 
     iim[0][0] = image[0][0];
 
@@ -86,12 +90,75 @@ int** integral_image(pel** image)
         iim[i][0] = iim[i-1][0] + image[i][0];
 
     for (i = 1; i < im.width; i++)
-        iim[0][i] = iim[0][i-1] + image[0][i];
+        iim[0][i] = iim[0][i-1] + image[0][i * 3];
 
     for (i = 1; i < im.height; i++)
     {
         for (j = 1; j < im.width; j++)
-            iim[i][j] = iim[i-1][j] + iim[i][j-1] + image[i][j];
+            iim[i][j] = iim[i-1][j] + iim[i][j-1] - iim[i-1][j-1] + image[i][j * 3];
     }
+
     return iim;
+}
+
+void checkEyeFeature(double** int_image, pel** image)
+{
+    const float rectSizeW = 0.4f, rectSizeH = 0.05f;
+
+    int pixSizeW = round(rectSizeW * im.width);
+    int pixSizeH = round(rectSizeH * im.height);
+
+    unsigned int i, j;
+
+    unsigned int max_i = 0, max_j = 0;
+    double max = 0;
+    size_t max_color = 0; 
+    for ( i = 0; i < im.height - 2 * pixSizeH; i += 1)
+    {
+        for (j = 0; j < im.width - pixSizeW; j += 1)
+        {
+            double white = int_image[i + pixSizeH][j + pixSizeW] - int_image [i + pixSizeH][j] - int_image[i][j + pixSizeW] + int_image[i][j];
+
+            double black = int_image[i + 2 * pixSizeH][j + pixSizeW] - int_image [i + 2 * pixSizeH][j] - int_image[i + pixSizeH][j + pixSizeW] + int_image[i + pixSizeH][j];
+
+            double diff = - black + white;
+
+            size_t color = 255 - 255 * (1 - diff/ (white > black? white : black) );
+
+            // printf("\n\trect(%d, %d): white = %f, black = %f, diff = %f", i, j, white, black, diff);
+
+            if (diff > max)
+            {
+                max = diff;
+                max_i = i;
+                max_j = j;
+                max_color = color;
+            }
+        }
+    }
+
+    printf("\n\n\tmax_rect(%d, %d): diff = %f, color = %d", max_i, max_j, max, max_color);
+
+    unsigned int k;
+    for (k = 0; k< pixSizeW; k ++)
+    {
+        image[max_i][(max_j + k) * 3] = 0;
+        image[max_i][(max_j + k) * 3 + 1] = 0;
+        image[max_i][(max_j + k) * 3 + 2] = max_color;
+
+        image[max_i + 2 * pixSizeH][(max_j + k) * 3] = 0;
+        image[max_i + 2 * pixSizeH][(max_j + k) * 3 + 1] = 0;
+        image[max_i + 2 * pixSizeH][(max_j + k) * 3 + 2] = max_color;
+    }
+    for (k = 0; k< 2 * pixSizeH; k ++)
+    {
+        image[max_i + k][max_j * 3] = 0;
+        image[max_i + k][max_j * 3 + 1] = 0;
+        image[max_i + k][max_j * 3 + 2] = max_color;
+
+        image[max_i + k][(max_j + pixSizeW) * 3] = 0;                
+        image[max_i + k][(max_j + pixSizeW) * 3 + 1] = 0;                
+        image[max_i + k][(max_j + pixSizeW) * 3 + 2] = max_color;                
+    }
+
 }

@@ -16,8 +16,10 @@ pel** readBMP_RGB(char* filename) {
 	fread(HeaderInfo, sizeof(pel), 54, f); // read the 54-byte header
 
 	// extract image height and width from header
-	int width = *(int*) &HeaderInfo[18];
-	int height = *(int*) &HeaderInfo[22];
+	int width = abs(*(int*) &HeaderInfo[18]);
+	int height = abs(*(int*) &HeaderInfo[22]);
+
+
 
 	unsigned int i;
 	//copy header for re-use
@@ -29,7 +31,7 @@ pel** readBMP_RGB(char* filename) {
 	int RowBytes = (width * 3 + 3) & (~3);
 	im.h_offset = RowBytes;
     im.type = "RGB";
-	im.bitColour = 24;
+	im.bitColor = 24;
 
 	printf("\n   Input BMP File name: %20s  (%u x %u)", filename, im.height,
 			im.width);
@@ -69,6 +71,7 @@ pel** readBMP_grey(char* filename) {
 	int RowBytes = width;
 	im.h_offset = RowBytes;
     im.type = "GREY";
+	im.bitColor = 8;
 
 	printf("\n   Input BMP File name: %20s  (%u x %u)", filename, im.height,
 			im.width);
@@ -103,7 +106,7 @@ void writeBMP(pel** img, char* filename) {
 	unsigned int y;
 	//write data
 
-	if (im.bitColour <= 8)
+	if (im.bitColor <= 8)
 	{
 		printf("\nwriting 8bit image...");
 		for (x = 0; x < im.height; x++)
@@ -161,7 +164,6 @@ pel** rgb2grey(pel** image)
 	}
 
 	im.type = "GREY";
-	im.bitColour = 8;
 
 	return grey_image;
 }
