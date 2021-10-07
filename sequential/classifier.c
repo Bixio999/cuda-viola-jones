@@ -48,8 +48,10 @@ Classifier* load_classifier(const char* classifier_path, const char* config_path
         }
 
         Filter*** filters = (Filter***) malloc(sizeof(Filter**) * stages);
+        int* stage_thresholds = (int*) malloc(sizeof(int) * stages);
 
         int j;
+        int* st_thr = stage_thresholds;
         for (i = 0; i < stages; i++)
         {
             n_filters = filter_per_stages[i];
@@ -91,6 +93,8 @@ Classifier* load_classifier(const char* classifier_path, const char* config_path
 
                 filters[i][j] = f;
             }
+            if (!feof(classifier_file))
+                fscanf(classifier_file, "%d", st_thr++);
         }
         fclose(classifier_file);
 
@@ -113,4 +117,5 @@ Rectangle* detect_single_face(Classifier* classifier, double** integral_image, b
 
 Rectangle** detect_multiple_faces(Classifier* classifier, double** integral_image, bool multiscale)
 {
+    return NULL;
 }

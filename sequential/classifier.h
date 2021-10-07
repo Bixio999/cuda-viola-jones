@@ -1,5 +1,8 @@
 #include <stdbool.h>
 
+#define WINDOW_WIDTH 24
+#define WINDOW_HEIGHT 24
+
 typedef struct rect
 {
     int x;
@@ -25,6 +28,7 @@ typedef struct classifier
 {
     Filter*** filters;
     int* filters_per_stages;
+    int* stage_thresholds;
     int n_stages;
 } Classifier;
 

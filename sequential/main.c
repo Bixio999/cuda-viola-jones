@@ -43,7 +43,7 @@ int main(int argc, char const *argv[])
             image = readBMP_grey(path_img);
         else
         {
-            printf("[ERROR] option not recognized. insert value: %s. comparison response: $d\n", grey_opt,strcmp(grey_opt, "grey"));
+            printf("[ERROR] option not recognized. insert value: %s. comparison response: %d\n", grey_opt,strcmp(grey_opt, "grey"));
             exit(1);
         }
     }
