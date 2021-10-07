@@ -1,16 +1,21 @@
 #include <stdbool.h>
 
+#include "image.h"
+
 #define WINDOW_WIDTH 24
 #define WINDOW_HEIGHT 24
+
+typedef struct size {
+    int width;
+    int height;
+} Size;
 
 typedef struct rect
 {
     int x;
     int y;
-    int width;
-    int height;
-}Rectangle;
-
+    Size size;
+} Rectangle;
 
 typedef struct filter{
     Rectangle rect1;
@@ -33,6 +38,6 @@ typedef struct classifier
 } Classifier;
 
 Classifier* load_classifier(const char* classifier_path, const char* config_path);
-Rectangle* detect_single_face(Classifier* classifier, double** integral_image, bool multiscale);
-Rectangle** detect_multiple_faces(Classifier* classifier, double** integral_image, bool multiscale);
+Rectangle* detect_single_face(Classifier* classifier, pel** image, float scaleFactor, Size minWindow, Size maxWindow);
+Rectangle** detect_multiple_faces(Classifier* classifier, pel** image, float scaleFactor, Size minWindow, Size maxWindow);
 

@@ -28,7 +28,7 @@ pel** readBMP_RGB(char* filename) {
 
 	im.height = height;
 	im.width = width;
-	int RowBytes = (width * 3 + 3) & (~3);
+	int RowBytes = ROWBYTES(width);
 	im.h_offset = RowBytes;
     im.type = "RGB";
 	im.bitColor = 24;
@@ -166,4 +166,74 @@ pel** rgb2grey(pel** image)
 	im.type = "GREY";
 
 	return grey_image;
+}
+
+void write_new_BMP(char* dest_path, pel** image, int h, int w, int bitColor)
+{
+	FILE *f;
+	unsigned char *img = NULL;
+	int filesize = 54 + 3 * w * h;  //w is your image width, h is image height, both int
+
+	img = (unsigned char *)malloc(3 * w * h);
+	memset(img,0,3*w*h);
+
+	int i, j, x, y;
+	int r, g ,b;
+	for(i=0; i<h; i++)
+	{
+		for( j=0; j<w; j++)
+		{
+			if (bitColor == 8)
+			{
+				r = image[i][j];
+				g = image[i][j];
+				b = image[i][j];
+			}
+			else
+			{
+				r = image[i][j * 3 + 2];
+				g = image[i][j * 3 + 1];
+				b = image[i][j * 3];
+			}
+			
+			if (r > 255) r=255;
+			if (g > 255) g=255;
+			if (b > 255) b=255;
+
+			img[( j + i * w )*3+2] = (unsigned char)(r);
+			img[( j + i * w )*3+1] = (unsigned char)(g);
+			img[( j + i * w )*3+0] = (unsigned char)(b);
+		}
+	}
+
+	unsigned char bmpfileheader[14] = {'B','M', 0,0,0,0, 0,0, 0,0, 54,0,0,0};
+	unsigned char bmpinfoheader[40] = {40,0,0,0, 0,0,0,0, 0,0,0,0, 1,0, 24,0};
+	unsigned char bmppad[3] = {0,0,0};
+
+	bmpfileheader[ 2] = (unsigned char)(filesize    );
+	bmpfileheader[ 3] = (unsigned char)(filesize>> 8);
+	bmpfileheader[ 4] = (unsigned char)(filesize>>16);
+	bmpfileheader[ 5] = (unsigned char)(filesize>>24);
+
+	bmpinfoheader[ 4] = (unsigned char)(       w    );
+	bmpinfoheader[ 5] = (unsigned char)(       w>> 8);
+	bmpinfoheader[ 6] = (unsigned char)(       w>>16);
+	bmpinfoheader[ 7] = (unsigned char)(       w>>24);
+	bmpinfoheader[ 8] = (unsigned char)(       h    );
+	bmpinfoheader[ 9] = (unsigned char)(       h>> 8);
+	bmpinfoheader[10] = (unsigned char)(       h>>16);
+	bmpinfoheader[11] = (unsigned char)(       h>>24);
+
+	f = fopen(dest_path, "wb");
+	fwrite(bmpfileheader,1,14,f);
+	fwrite(bmpinfoheader,1,40,f);
+
+	for(i=0; i<h; i++)
+	{
+		fwrite(img+(w*(h-i-1)*3),3,w,f);
+		fwrite(bmppad,1,(4-(w*3)%4)%4,f);
+	}
+
+	free(img);
+	fclose(f);
 }

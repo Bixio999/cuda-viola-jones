@@ -69,45 +69,21 @@ int main(int argc, char const *argv[])
 
     if (classifier)
         printf("\nclassifier correctly loaded.");
-    
-    double **int_image = integral_image(image);
-    printf("\nintegral image computated.\n");
 
-    Rectangle* face = detect_single_face(classifier, int_image, true);
+    float scaleFactor = 1.2f;
+    Size minSize = {24, 24};
+    Size maxSize = {0,0};
+
+    Rectangle* face = detect_single_face(classifier, image, scaleFactor, minSize, maxSize);
 
     draw_rectangle(image, face);
 
-    writeBMP(image, "check_eyes.bmp");
+    // writeBMP(image, "check_eyes.bmp");
+    write_new_BMP("out.bmp", image, im.height, im.width, 24);
     
 }
 
-double** integral_image(pel** image)
-{
-    if (image == NULL)
-        return NULL;
 
-    double** iim = (double**) malloc(im.height * sizeof(double*));
-    unsigned int i;
-    for (i = 0; i < im.height; i++)
-        iim[i] = (double *) malloc(im.width * sizeof(double));
-
-    iim[0][0] = image[0][0];
-
-    unsigned int j;
-    for (i = 1; i < im.height; i++)
-        iim[i][0] = iim[i-1][0] + image[i][0];
-
-    for (i = 1; i < im.width; i++)
-        iim[0][i] = iim[0][i-1] + image[0][i * 3];
-
-    for (i = 1; i < im.height; i++)
-    {
-        for (j = 1; j < im.width; j++)
-            iim[i][j] = iim[i-1][j] + iim[i][j-1] - iim[i-1][j-1] + image[i][j * 3];
-    }
-
-    return iim;
-}
 
 void draw_rectangle(pel** image, Rectangle* face)
 {

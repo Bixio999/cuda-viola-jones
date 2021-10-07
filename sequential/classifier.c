@@ -3,6 +3,7 @@
 #include <stdio.h>
 
 #include "classifier.h"
+#include <math.h>
 
 Classifier* load_classifier(const char* classifier_path, const char* config_path)
 {
@@ -64,8 +65,8 @@ Classifier* load_classifier(const char* classifier_path, const char* config_path
 
                 fscanf(classifier_file, "%d", &(rect.x)); 
                 fscanf(classifier_file, "%d", &(rect.y)); 
-                fscanf(classifier_file, "%d", &(rect.width)); 
-                fscanf(classifier_file, "%d", &(rect.height));
+                fscanf(classifier_file, "%d", &(rect.size.width)); 
+                fscanf(classifier_file, "%d", &(rect.size.height));
                 
                 fscanf(classifier_file, "%d", &(f->weight1));
 
@@ -73,8 +74,8 @@ Classifier* load_classifier(const char* classifier_path, const char* config_path
 
                 fscanf(classifier_file, "%d", &(rect.x)); 
                 fscanf(classifier_file, "%d", &(rect.y)); 
-                fscanf(classifier_file, "%d", &(rect.width)); 
-                fscanf(classifier_file, "%d", &(rect.height));                
+                fscanf(classifier_file, "%d", &(rect.size.width)); 
+                fscanf(classifier_file, "%d", &(rect.size.height));                
 
                 fscanf(classifier_file, "%d", &(f->weight2));
 
@@ -82,8 +83,8 @@ Classifier* load_classifier(const char* classifier_path, const char* config_path
 
                 fscanf(classifier_file, "%d", &(rect.x)); 
                 fscanf(classifier_file, "%d", &(rect.y)); 
-                fscanf(classifier_file, "%d", &(rect.width)); 
-                fscanf(classifier_file, "%d", &(rect.height));                
+                fscanf(classifier_file, "%d", &(rect.size.width)); 
+                fscanf(classifier_file, "%d", &(rect.size.height));                
 
                 fscanf(classifier_file, "%d", &(f->weight3));    
 
@@ -110,12 +111,68 @@ Classifier* load_classifier(const char* classifier_path, const char* config_path
     return NULL;
 }
 
-Rectangle* detect_single_face(Classifier* classifier, double** integral_image, bool multiscale)
+double** integral_image(pel** image, Size size)
 {
+    if (image == NULL)
+        return NULL;
+
+    double** iim = (double**) malloc(size.height * sizeof(double*));
+    unsigned int i;
+    for (i = 0; i < size.height; i++)
+        iim[i] = (double *) malloc(size.width * sizeof(double));
+
+    iim[0][0] = image[0][0];
+
+    unsigned int j;
+    for (i = 1; i < size.height; i++)
+        iim[i][0] = iim[i-1][0] + image[i][0];
+
+    for (i = 1; i < size.width; i++)
+        iim[0][i] = iim[0][i-1] + image[0][i * 3];
+
+    for (i = 1; i < size.height; i++)
+    {
+        for (j = 1; j < size.width; j++)
+            iim[i][j] = iim[i-1][j] + iim[i][j-1] - iim[i-1][j-1] + image[i][j * 3];
+    }
+
+    return iim;
+}
+
+pel** resize_image(pel** image, Size out_size)
+{
+    float resize_factor = (float) im.height / out_size.height;
+    printf("\nresizing factor: %f", resize_factor);
+
+    pel** output = (pel**) malloc(sizeof(pel*) * out_size.height);
+    int i;
+    for (i = 0; i < out_size.height; i++)
+        output[i] = (pel*) malloc(sizeof(pel) * out_size.width);
+
+    int j;
+    for (i = 0; i < out_size.height; i++)
+    {
+        for (j = 0; j < out_size.width; j++)
+        {
+            int h = floor(i * resize_factor);
+            int w = floor(j * resize_factor);
+
+            output[i][j] = image[h][w * 3];
+        }
+    }
+    return output;
+}
+
+Rectangle* detect_single_face(Classifier* classifier, pel** image, float scaleFactor, Size minWindow, Size maxWindow)
+{
+    Size temp_size = { round(im.width / scaleFactor), round(im.height / scaleFactor) };
+    printf("\nresizing image from %d x %d to %d x %d.", im.height, im.width, temp_size.height, temp_size.width);
+    pel** resized = resize_image(image, temp_size);
+    write_new_BMP("resized.bmp", resized, temp_size.height, temp_size.width, 8);
     return NULL;
 }
 
-Rectangle** detect_multiple_faces(Classifier* classifier, double** integral_image, bool multiscale)
+Rectangle** detect_multiple_faces(Classifier* classifier, pel** image, float scaleFactor, Size minWindow, Size maxWindow)
 {
     return NULL;
 }
