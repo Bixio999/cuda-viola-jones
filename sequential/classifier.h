@@ -38,6 +38,6 @@ typedef struct classifier
 } Classifier;
 
 Classifier* load_classifier(const char* classifier_path, const char* config_path);
-Rectangle* detect_single_face(Classifier* classifier, pel** image, float scaleFactor, Size minWindow, Size maxWindow);
-Rectangle** detect_multiple_faces(Classifier* classifier, pel** image, float scaleFactor, Size minWindow, Size maxWindow);
+// Rectangle* detect_single_face(Classifier* classifier, pel** image, float scaleFactor, Size minWindow, Size maxWindow);
+List* detect_multiple_faces(Classifier* classifier, pel** image, float scaleFactor, int minWindow, int maxWindow);
 

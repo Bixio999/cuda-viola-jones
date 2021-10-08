@@ -71,8 +71,8 @@ int main(int argc, char const *argv[])
         printf("\nclassifier correctly loaded.");
 
     float scaleFactor = 1.2f;
-    Size minSize = {24, 24};
-    Size maxSize = {0,0};
+    int minSize = 24;
+    int maxSize = 0;
 
     Rectangle* face = detect_single_face(classifier, image, scaleFactor, minSize, maxSize);
 
