@@ -65,89 +65,41 @@ int main(int argc, char const *argv[])
     const char* classifier_file = "../class.txt";
     const char* config_file = "info.txt";
 
-    Classifier* classifier = load_classifier(classifier_file, config_file);
-
-    if (classifier)
+    if (load_classifier(classifier_file, config_file))
         printf("\nclassifier correctly loaded.");
 
     float scaleFactor = 1.2f;
     int minSize = 24;
     int maxSize = 0;
 
-    Rectangle* face = detect_single_face(classifier, image, scaleFactor, minSize, maxSize);
+    List* face = detect_multiple_faces(image, scaleFactor, minSize, maxSize);
 
-    draw_rectangle(image, face);
-
-    // writeBMP(image, "check_eyes.bmp");
-    write_new_BMP("out.bmp", image, im.height, im.width, 24);
+    printf("\ndrawing detected faces");
     
+
+    if (face->size > 0)
+    {
+        while (face->size > 0)
+            draw_rectangle(image, remove_from_head(face));
+        write_new_BMP("out.bmp", image, im.height, im.width, 24);
+    }
+    else
+        printf("\n no faces detected in given image.\n");
+
+    exit(0);
 }
-
-
 
 void draw_rectangle(pel** image, Rectangle* face)
 {
+    int i,j;
 
+    for (i = face->y; i < face->y + face->size.height; i++)
+    {
+        for (j = face->x; j < face->x + face->size.width; i++)
+        {
+            image[i][3 * j + 2] = 255; // r
+            image[i][3 * j + 1] = 0;   // g
+            image[i][3 * j] = 0;       // b
+        }
+    }
 }
-
-// void checkEyeFeature(double** int_image, pel** image)
-// {
-//     const float rectSizeW = 0.4f, rectSizeH = 0.05f;
-
-//     int pixSizeW = round(rectSizeW * im.width);
-//     int pixSizeH = round(rectSizeH * im.height);
-
-//     unsigned int i, j;
-
-//     unsigned int max_i = 0, max_j = 0;
-//     double max = 0;
-//     size_t max_color = 0; 
-//     for ( i = 0; i < im.height - 2 * pixSizeH; i += 1)
-//     {
-//         for (j = 0; j < im.width - pixSizeW; j += 1)
-//         {
-//             double white = int_image[i + pixSizeH][j + pixSizeW] - int_image [i + pixSizeH][j] - int_image[i][j + pixSizeW] + int_image[i][j];
-
-//             double black = int_image[i + 2 * pixSizeH][j + pixSizeW] - int_image [i + 2 * pixSizeH][j] - int_image[i + pixSizeH][j + pixSizeW] + int_image[i + pixSizeH][j];
-
-//             double diff = - black + white;
-
-//             size_t color = 255 - 255 * (1 - diff/ (white > black? white : black) );
-
-//             // printf("\n\trect(%d, %d): white = %f, black = %f, diff = %f", i, j, white, black, diff);
-
-//             if (diff > max)
-//             {
-//                 max = diff;
-//                 max_i = i;
-//                 max_j = j;
-//                 max_color = color;
-//             }
-//         }
-//     }
-
-//     printf("\n\n\tmax_rect(%d, %d): diff = %f, color = %d", max_i, max_j, max, max_color);
-
-//     unsigned int k;
-//     for (k = 0; k< pixSizeW; k ++)
-//     {
-//         image[max_i][(max_j + k) * 3] = 0;
-//         image[max_i][(max_j + k) * 3 + 1] = 0;
-//         image[max_i][(max_j + k) * 3 + 2] = max_color;
-
-//         image[max_i + 2 * pixSizeH][(max_j + k) * 3] = 0;
-//         image[max_i + 2 * pixSizeH][(max_j + k) * 3 + 1] = 0;
-//         image[max_i + 2 * pixSizeH][(max_j + k) * 3 + 2] = max_color;
-//     }
-//     for (k = 0; k< 2 * pixSizeH; k ++)
-//     {
-//         image[max_i + k][max_j * 3] = 0;
-//         image[max_i + k][max_j * 3 + 1] = 0;
-//         image[max_i + k][max_j * 3 + 2] = max_color;
-
-//         image[max_i + k][(max_j + pixSizeW) * 3] = 0;                
-//         image[max_i + k][(max_j + pixSizeW) * 3 + 1] = 0;                
-//         image[max_i + k][(max_j + pixSizeW) * 3 + 2] = max_color;                
-//     }
-
-// }

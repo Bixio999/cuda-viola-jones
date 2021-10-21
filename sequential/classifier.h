@@ -17,27 +17,21 @@ typedef struct rect
     Size size;
 } Rectangle;
 
-typedef struct filter{
-    Rectangle rect1;
-    int weight1;
-    Rectangle rect2;
-    int weight2;
-    Rectangle rect3;
-    int weight3;
-    
-    int threshold;
-    int alpha1, alpha2;
-} Filter;
+typedef struct node {
+    Rectangle* elem;
+    struct node* next;
+} Node;
 
-typedef struct classifier
-{
-    Filter*** filters;
-    int* filters_per_stages;
-    int* stage_thresholds;
-    int n_stages;
-} Classifier;
+typedef struct list {
+    Node* head;
+    int size;
+} List;
 
-Classifier* load_classifier(const char* classifier_path, const char* config_path);
+List* listInit();
+void add(List* list, Rectangle* r);
+Rectangle* remove_from_head(List* list);
+
+bool load_classifier(const char* classifier_path, const char* config_path);
 // Rectangle* detect_single_face(Classifier* classifier, pel** image, float scaleFactor, Size minWindow, Size maxWindow);
-List* detect_multiple_faces(Classifier* classifier, pel** image, float scaleFactor, int minWindow, int maxWindow);
+List* detect_multiple_faces(pel** image, float scaleFactor, int minWindow, int maxWindow);
 
