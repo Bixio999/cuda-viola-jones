@@ -6,9 +6,12 @@
             "command": "/usr/bin/gcc",
             "args": [
                 "-g",
-                "${file}",
+                "main.c",
+                "bmp_handler.c",
+                "classifier.c",
                 "-o",
-                "${fileDirname}/${fileBasenameNoExtension}"
+                "${fileDirname}/viola-jones.out",
+                "-lm"
             ],
             "options": {
                 "cwd": "${fileDirname}"

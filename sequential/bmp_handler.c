@@ -163,8 +163,6 @@ pel** rgb2grey(pel** image)
 		}
 	}
 
-	im.type = "GREY";
-
 	return grey_image;
 }
 

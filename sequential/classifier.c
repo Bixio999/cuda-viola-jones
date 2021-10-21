@@ -132,6 +132,7 @@ bool load_classifier(const char* classifier_path, const char* config_path)
         class->filters = filters;
         class->filters_per_stages = filter_per_stages;
         class->n_stages = stages;
+        class->stage_thresholds = stage_thresholds;
 
         classifier = class;
         return true;
@@ -245,11 +246,11 @@ pel** resize_image(pel** image, Size out_size)
     return output;
 }
 
-bool runClassifier(double** iim, int y, int x, double variance)
+bool runClassifier(double** iim, int y, int x, unsigned int variance)
 {
     int stage, i;
-    double stage_sum, filter_sum, temp;
-    float threshold;
+    unsigned int temp;
+    long int threshold, filter_sum, stage_sum;
 
     for (stage = 0; stage < classifier->n_stages; stage++)
     {
@@ -261,57 +262,55 @@ bool runClassifier(double** iim, int y, int x, double variance)
             Filter* f = filters[i];
             filter_sum = 0;
             
-            threshold = f->threshold * variance;
+            threshold = (long int) f->threshold * variance;
 
             Rectangle* r = &(f->rect1);
 
             temp = 0;
-            temp += iim[y + r->size.height][x + r->size.width];
-            temp += - iim[y][x + r->size.width];
-            temp += - iim[y + r->size.height][x];
-            temp += iim[y][x];
+            temp += iim[y + r->y + r->size.height][x + r->x + r->size.width];
+            temp += - iim[y + r->y][x + r->x + r->size.width];
+            temp += - iim[y + r->y + r->size.height][x + r->x];
+            temp += iim[y + r->y][x + r->x];
 
-            filter_sum += temp * f->weight1;
-
-            // filter_sum += ( iim[y + r.size.height][x + r.size.width] - iim[y][x + r.size.width] - iim[y + r.size.height][x] + iim[y][x] ) * f->weight1;
+            filter_sum += (long int) temp * f->weight1;
 
             r = &(f->rect2);
             
             temp = 0;
-            temp += iim[y + r->size.height][x + r->size.width];
-            temp += - iim[y][x + r->size.width];
-            temp += - iim[y + r->size.height][x];
-            temp += iim[y][x];
+            temp += iim[y + r->y + r->size.height][x + r->x + r->size.width];
+            temp += - iim[y + r->y][x + r->x + r->size.width];
+            temp += - iim[y + r->y + r->size.height][x + r->x];
+            temp += iim[y + r->y][x + r->x];
 
-            filter_sum += temp * f->weight2;
+            filter_sum += (long int) temp * f->weight2;
 
             r = &(f->rect3);
 
             if ( (r->x + r->y + r->size.height + r->size.width) != 0)
             {
                 temp = 0;
-                temp += iim[y + r->size.height][x + r->size.width];
-                temp += - iim[y][x + r->size.width];
-                temp += - iim[y + r->size.height][x];
-                temp += iim[y][x];
+                temp += iim[y + r->y + r->size.height][x + r->x + r->size.width];
+                temp += - iim[y + r->y][x + r->x + r->size.width];
+                temp += - iim[y + r->y + r->size.height][x + r->x];
+                temp += iim[y + r->y][x + r->x];
 
-                filter_sum += temp * f->weight3;
+                filter_sum += (long int) temp * f->weight3;
             }
 
-            stage_sum += (filter_sum < threshold ? f->alpha1 : f->alpha2);
+            stage_sum += (long int)(filter_sum < threshold ? f->alpha1 : f->alpha2);
         }
         
-        if (stage_sum < 0.4 * classifier->stage_thresholds[stage])
+        if (stage_sum < 0.4f * classifier->stage_thresholds[stage])
             return false;
     }
-    printf("\n face detected in window on (%d,%d)", x, y);
+    // printf("\n face detected in window on (%d,%d)", x, y);
     return true;
 }
 
-void evaluate(double** iim, double** sq_iim, Size size, int currWinSize, List* faces)
+void evaluate(double** iim, double** sq_iim, Size size, int currWinSize, float factor, List* faces)
 {
     int i, j, stage, k;
-    double variance, mean;
+    unsigned int variance, mean;
 
     for (i = 0; i < size.height - window_size; i++)
     {
@@ -319,8 +318,8 @@ void evaluate(double** iim, double** sq_iim, Size size, int currWinSize, List* f
         {
             /// VARIANCE COMPUTATION
 
-            mean = iim[i + window_size][j + window_size];
-            variance = sq_iim[i + window_size][j + window_size];
+            mean = iim[i + window_size - 1][j + window_size - 1];
+            variance = sq_iim[i + window_size - 1][j + window_size - 1];
 
             if (i > 0)
             {
@@ -337,10 +336,8 @@ void evaluate(double** iim, double** sq_iim, Size size, int currWinSize, List* f
                 mean += iim[i-1][j-1];
                 variance += sq_iim[i-1][j-1];
             }
-            variance = (variance * (window_size * window_size)) - mean * mean;
-            printf("variable : %f", mean);
-            exit(0);
 
+            variance = (variance * (window_size * window_size)) - mean * mean;
             variance = variance > 0 ? sqrt(variance) : 1;
 
             // FILTERS EVALUATION
@@ -348,8 +345,8 @@ void evaluate(double** iim, double** sq_iim, Size size, int currWinSize, List* f
             if (runClassifier(iim, i, j, variance))
             {
                 Rectangle* face = malloc(sizeof(Rectangle));
-                face->x = j;
-                face->y = i;
+                face->x = j * factor;
+                face->y = i * factor;
                 face->size.height = currWinSize;
                 face->size.width = currWinSize;
 
@@ -387,9 +384,15 @@ List* detect_multiple_faces(pel** image, float scaleFactor, int minWindow, int m
     {
         Size image_size = { im.width, im.height };
         double** iim, **squared_iim;
-        integral_image_24bit(image, image_size, &iim, &squared_iim);
-        printf("\nintegral image 24bit created");
-        evaluate(iim, squared_iim, image_size, window_size, faces);
+        if (im.bitColor > 8)
+        {
+            integral_image_24bit(image, image_size, &iim, &squared_iim);
+            printf("\nintegral image 24bit created");
+        }
+        else
+            integral_image(image, image_size, &iim, &squared_iim);
+        
+        evaluate(iim, squared_iim, image_size, window_size, 1, faces);
         free_integral_image(iim, image_size);
         free_integral_image(squared_iim, image_size);
         printf("\niims deleted and memory free");
@@ -426,7 +429,7 @@ List* detect_multiple_faces(pel** image, float scaleFactor, int minWindow, int m
 
         integral_image(res_im, temp_size, &iim, &squared_iim);
 
-        evaluate(iim, squared_iim, temp_size, curr_winSize, faces);
+        evaluate(iim, squared_iim, temp_size, curr_winSize, currFactor, faces);
 
         free_image(res_im, temp_size);
         free_integral_image(iim, temp_size);
@@ -450,17 +453,19 @@ void add(List* list, Rectangle* r)
 {
     if (list)
     {
-        Node node = {r, NULL};
+        Node* node = (Node*) malloc(sizeof(Node));
+        node->elem = r;
+        node->next = NULL;
 
-        if (list->size == 0)
+    if (list->size == 0)
         {
-            list->head = &node;
+            list->head = node;
             list->size++;
             return;
         }
 
-        node.next = list->head;
-        list->head = &node;
+        node->next = list->head;
+        list->head = node;
         list->size++;
         return;
     }
