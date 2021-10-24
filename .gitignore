@@ -4,13 +4,14 @@
 
 ### custom ###
 
+install.sh*
 test
 compile-command.txt
 *.bmp
 *.txt
 vj_cpp
 vj_cuda5.zip
-
+viola-jones
 
 ### C ###
 # Prerequisites
