@@ -129,7 +129,6 @@ Temporary Items
 #build and release folders
 */CMakeFiles
 */CMakeCache.txt
-*/Makefile
 */cmake_install.cmake
 
 ### VisualStudioCode ###
