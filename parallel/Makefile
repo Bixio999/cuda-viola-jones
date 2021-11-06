@@ -1,5 +1,5 @@
 viola-jones: main.cu bmp_handler.cu
-	nvcc -arch sm_37 -Wno-deprecated-gpu-targets main.cu bmp_handler.cu -o viola-jones
+	nvcc -arch sm_37 -Wno-deprecated-gpu-targets main.cu bmp_handler.cu classifier.cu -o viola-jones
 
 run: 
 	./viola-jones ../images/lena.bmp

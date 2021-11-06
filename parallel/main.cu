@@ -7,6 +7,7 @@
 
 #include "image.h"
 #include "classifier.h"
+#include "utils/common.h"
 
 struct Image im;
 
@@ -28,7 +29,7 @@ int main(int argc, char const *argv[])
 
     printf("%s", path_img);
 
-    pel* image;
+    pel* dev_image;
     pel* original_image;
 
     if (argc == 3)
@@ -42,8 +43,9 @@ int main(int argc, char const *argv[])
 
         if (strcmp(grey_opt, "grey") == 0)
         {
-            image = readBMP_grey(path_img);
-            original_image = image;
+            original_image = readBMP_grey(path_img);
+            CHECK(cudaMalloc((void **) &dev_image, sizeof(pel) * im.height * im.width));
+            CHECK(cudaMemcpy(dev_image, original_image, sizeof(pel) * im.height * im.width, cudaMemcpyHostToDevice));
         }
         else
         {
@@ -55,28 +57,25 @@ int main(int argc, char const *argv[])
     {
         original_image = readBMP_RGB(path_img);
         printf("\nimage correctly read.");
-        image = rgb2grey(original_image);
+        dev_image = rgb2grey(original_image);
         printf("\nimage correctly converted to greyscale.");
     }
 
-    if (image == NULL)
+    if (dev_image == NULL)
     {
         printf("\n[ERROR] image not found or unable to correctly read.");
         exit(1);
     }
 
-    write_new_BMP("grey.bmp", image, im.height, im.width, 24);
-    writeBMP(image, "grey_2.bmp");
-
     const char* classifier_file = "../class.txt";
     const char* config_file = "info.txt";
 
-    // if (load_classifier(classifier_file, config_file))
-    //     printf("\nclassifier correctly loaded.");
+    if (load_classifier(classifier_file, config_file))
+        printf("\nclassifier correctly loaded.");
 
-    // float scaleFactor = 1.2f;
-    // int minSize = 24;
-    // int maxSize = 0;
+    float scaleFactor = 1.2f;
+    int minSize = 24;
+    int maxSize = 0;
 
     // List* face = detect_multiple_faces(image, scaleFactor, minSize, maxSize);
 

@@ -89,7 +89,7 @@ bool load_classifier(const char* classifier_path, const char* config_path)
 
             for (j = 0; j < n_filters && !feof(classifier_file); j++)
             {
-                Filter* f = malloc(sizeof(Filter));
+                Filter* f = (Filter *) malloc(sizeof(Filter));
                 Rectangle* rect = &(f->rect1);
 
                 fscanf(classifier_file, "%d", &(rect->x)); 
@@ -128,13 +128,13 @@ bool load_classifier(const char* classifier_path, const char* config_path)
         }
         fclose(classifier_file);
 
-        Classifier* class = malloc(sizeof(Classifier));
-        class->filters = filters;
-        class->filters_per_stages = filter_per_stages;
-        class->n_stages = stages;
-        class->stage_thresholds = stage_thresholds;
+        Classifier* clas = (Classifier*) malloc(sizeof(Classifier));
+        clas->filters = filters;
+        clas->filters_per_stages = filter_per_stages;
+        clas->n_stages = stages;
+        clas->stage_thresholds = stage_thresholds;
 
-        classifier = class;
+        classifier = clas;
         return true;
     }
     else
@@ -344,7 +344,7 @@ void evaluate(double** iim, double** sq_iim, Size size, int currWinSize, float f
 
             if (runClassifier(iim, i, j, variance))
             {
-                Rectangle* face = malloc(sizeof(Rectangle));
+                Rectangle* face = (Rectangle *) malloc(sizeof(Rectangle));
                 face->x = j * factor;
                 face->y = i * factor;
                 face->size.height = currWinSize;
@@ -423,7 +423,7 @@ List* detect_multiple_faces(pel** image, float scaleFactor, int minWindow, int m
 
         pel** res_im = resize_image(image, temp_size);
         
-        write_new_BMP(file_name, res_im, temp_size.height, temp_size.width, 8);
+        // write_new_BMP(file_name, res_im, temp_size.height, temp_size.width, 8);
 
         double** iim, **squared_iim;
 
@@ -442,7 +442,7 @@ List* detect_multiple_faces(pel** image, float scaleFactor, int minWindow, int m
 
 List* listInit()
 {
-    List* list = malloc(sizeof(List));
+    List* list = (List *) malloc(sizeof(List));
     list->head = NULL;
     list->size = 0;
 

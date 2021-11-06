@@ -164,16 +164,9 @@ pel* rgb2grey(pel* image)
 	CHECK(cudaMemcpy(dev_image, image, nBytes, cudaMemcpyHostToDevice));
 
 	cuda_rgb2grey<<< dimGrid, dimBlock >>>(dev_image, im.height * im.width);
-
-	pel* grey_image = (pel*) malloc(nBytes);
-
 	cudaDeviceSynchronize();
 
-	CHECK(cudaMemcpy(grey_image, dev_image, nBytes, cudaMemcpyDeviceToHost));
-
-	CHECK(cudaFree(dev_image));
-
-	return grey_image;
+	return dev_image;
 }
 
 void write_new_BMP(char* dest_path, pel* image, int h, int w, int bitColor)
