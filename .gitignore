@@ -7,11 +7,14 @@
 install.sh*
 test
 compile-command.txt
-*.bmp
 *.txt
 vj_cpp
 vj_cuda5.zip
 viola-jones
+conv/*
+*.bmp
+!images/*.bmp
+
 
 ### C ###
 # Prerequisites
@@ -128,7 +131,6 @@ Temporary Items
 #build and release folders
 */CMakeFiles
 */CMakeCache.txt
-*/Makefile
 */cmake_install.cmake
 
 ### VisualStudioCode ###
