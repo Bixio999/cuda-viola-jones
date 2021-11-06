@@ -6,10 +6,12 @@
 
 test
 compile-command.txt
-*.bmp
 *.txt
 vj_cpp
 vj_cuda5.zip
+conv/*
+*.bmp
+!images/*.bmp
 
 
 ### C ###
