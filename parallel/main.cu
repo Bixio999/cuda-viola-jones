@@ -28,8 +28,8 @@ int main(int argc, char const *argv[])
 
     printf("%s", path_img);
 
-    pel** image;
-    pel** original_image;
+    pel* image;
+    pel* original_image;
 
     if (argc == 3)
     {
@@ -56,6 +56,7 @@ int main(int argc, char const *argv[])
         original_image = readBMP_RGB(path_img);
         printf("\nimage correctly read.");
         image = rgb2grey(original_image);
+        printf("\nimage correctly converted to greyscale.");
     }
 
     if (image == NULL)
@@ -63,6 +64,9 @@ int main(int argc, char const *argv[])
         printf("\n[ERROR] image not found or unable to correctly read.");
         exit(1);
     }
+
+    write_new_BMP("grey.bmp", image, im.height, im.width, 24);
+    writeBMP(image, "grey_2.bmp");
 
     const char* classifier_file = "../class.txt";
     const char* config_file = "info.txt";

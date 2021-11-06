@@ -6,7 +6,7 @@
 #include "image.h"
 #include "utils/common.h"
 
-pel** readBMP_RGB(char* filename) {
+pel* readBMP_RGB(char* filename) {
 	FILE* f = fopen(filename, "rb");
 	if (f == NULL) {
 		printf("\n\n%s NOT FOUND\n\n", filename);
@@ -37,18 +37,18 @@ pel** readBMP_RGB(char* filename) {
 	printf("\n   Input BMP File name: %20s  (%u x %u)", filename, im.height,
 			im.width);
 
-	pel **TheImage = (pel **) malloc(height * sizeof(pel*));
-	for (i = 0; i < height; i++)
-		TheImage[i] = (pel *) malloc(RowBytes * sizeof(pel));
+	pel *TheImage = (pel *) malloc(height * RowBytes * sizeof(pel));
+	
+	// for (i = 0; i < height * RowBytes; i++)
+	// 	fread(TheImage[i], sizeof(unsigned char), 1, f);
 
-	for (i = 0; i < height; i++)
-		fread(TheImage[i], sizeof(unsigned char), RowBytes, f);
+	fread(TheImage, sizeof(unsigned char), height * RowBytes, f);
 
 	fclose(f);
 	return TheImage;  // remember to free() it in caller!
 }
 
-pel** readBMP_grey(char* filename) {
+pel* readBMP_grey(char* filename) {
 	FILE* f = fopen(filename, "rb");
 	if (f == NULL) {
 		printf("\n\n%s NOT FOUND\n\n", filename);
@@ -77,13 +77,12 @@ pel** readBMP_grey(char* filename) {
 	printf("\n   Input BMP File name: %20s  (%u x %u)", filename, im.height,
 			im.width);
 
-	pel tmp;
-	pel **TheImage = (pel **) malloc(height * sizeof(pel*));
-	for (i = 0; i < height; i++)
-		TheImage[i] = (pel *) malloc(RowBytes * sizeof(pel));
+	pel *TheImage = (pel *) malloc(height * RowBytes * sizeof(unsigned char));
+	
+	// for (i = 0; i < height * RowBytes; i++)
+	// 	fread(TheImage + i, sizeof(unsigned char), 1, f);
 
-	for (i = 0; i < height; i++)
-		fread(TheImage[i], sizeof(unsigned char), RowBytes, f);
+	fread(TheImage, sizeof(unsigned char), height * RowBytes, f);
 
 	fclose(f);
 	return TheImage;  // remember to free() it in caller!
@@ -92,7 +91,7 @@ pel** readBMP_grey(char* filename) {
 /*
  * Store a BMP image
  */
-void writeBMP(pel** img, char* filename) {
+void writeBMP(pel* img, char* filename) {
 	FILE* f = fopen(filename, "wb");
 	if (f == NULL) {
 		printf("\n\nFILE CREATION ERROR: %s\n\n", filename);
@@ -110,23 +109,19 @@ void writeBMP(pel** img, char* filename) {
 	if (im.bitColor <= 8)
 	{
 		printf("\nwriting 8bit image...");
-		for (x = 0; x < im.height; x++)
+		for (x = 0; x < im.height * im.width; x++)
 		{
-			for (y = 0; y < im.width; y++) {
-				char temp = img[x][y];
-				fputc(temp, f);
-			}
+			char temp = img[x];
+			fputc(temp, f);
 		}
 	}
 	else
 	{
 		printf("\nwriting 24bit image...");
-		for (x = 0; x < im.height; x++)
+		for (x = 0; x < im.height * im.h_offset; x++)
 		{
-			for (y = 0; y < im.h_offset; y++) {
-				char temp = img[x][y];
-				fputc(temp, f);
-			}
+			char temp = img[x];
+			fputc(temp, f);
 		}
 	}
 	
@@ -137,22 +132,25 @@ void writeBMP(pel** img, char* filename) {
 	fclose(f);
 }
 
-__global__ void cuda_rgb2grey(pel** image, int n_pixels)
+__global__ void cuda_rgb2grey(pel* image, int size)
 {
 	int id = blockIdx.x * blockDim.x + threadIdx.x;
-	
-	int pixId = id * 3;
 
-	pel grey_val = (pel) (0.3f * image[pixId + 2] + 0.59f * image[pixId + 1] + 0.11f * image[pixId]);
+	if (id < size)
+	{
+		int pixId = id * 3;
 
-	image[pixId] = grey_val;
-	image[pixId + 1] = grey_val;
-	image[pixId + 2] = grey_val;
+		pel grey_val = (pel) (0.3f * image[pixId + 2] + 0.59f * image[pixId + 1] + 0.11f * image[pixId]);
+
+		image[pixId] = grey_val;
+		image[pixId + 1] = grey_val;
+		image[pixId + 2] = grey_val;
+	}
 }
 
-pel** rgb2grey(pel** image)
+pel* rgb2grey(pel* image)
 {
-	pel** dev_image;
+	pel* dev_image;
 
 	uint dimBlock = 256, dimGrid;
 	int rowBlock = (im.width + dimBlock - 1) / dimBlock;
@@ -160,41 +158,25 @@ pel** rgb2grey(pel** image)
 
 	printf("\n dimBlock = %d, dimGrid = %d", dimBlock, dimGrid);
 
-	CHECK(cudaMalloc((void**) &dev_image, im.height * im.width ));
-	CHECK(cudaMemcpy(dev_image, image, im.height * im.width, cudaMemcpyHostToDevice));
+	int nBytes = sizeof(pel) * im.height * im.h_offset;
 
-	cuda_rgb2grey<<< dimGrid, dimBlock >>>(dev_image);
+	CHECK(cudaMalloc((void**) &dev_image, nBytes ));
+	CHECK(cudaMemcpy(dev_image, image, nBytes, cudaMemcpyHostToDevice));
 
-	pel** grey_image = (pel**) malloc(im.height * im.width);
+	cuda_rgb2grey<<< dimGrid, dimBlock >>>(dev_image, im.height * im.width);
 
-	CHECK(cudaMemcpy(grey_image, dev_image, im.height * im.width, cudaMemcpyDeviceToHost));
+	pel* grey_image = (pel*) malloc(nBytes);
 
+	cudaDeviceSynchronize();
 
+	CHECK(cudaMemcpy(grey_image, dev_image, nBytes, cudaMemcpyDeviceToHost));
 
-	// unsigned int j, k;
-	// for (j = 0; j < im.height; j ++)
-	// {
-	// 	for (i = 0; i < im.width; i++)
-	// 	{
-	// 		k = i * 3;
-
-	// 		size_t r,g,b, grey_val;
-	// 		r = image[j][k+2];
-	// 		g = image[j][k+1];
-	// 		b = image[j][k];
-
-	// 		grey_val = (pel) round(0.3f * r + 0.59f * g + 0.11f * b); // luminance formula
-
-	// 		grey_image[j][k] = grey_val;
-	// 		grey_image[j][k+1] = grey_val;
-	// 		grey_image[j][k+2] = grey_val;
-	// 	}
-	// }
+	CHECK(cudaFree(dev_image));
 
 	return grey_image;
 }
 
-void write_new_BMP(char* dest_path, pel** image, int h, int w, int bitColor)
+void write_new_BMP(char* dest_path, pel* image, int h, int w, int bitColor)
 {
 	FILE *f;
 	unsigned char *img = NULL;
@@ -211,15 +193,15 @@ void write_new_BMP(char* dest_path, pel** image, int h, int w, int bitColor)
 		{
 			if (bitColor == 8)
 			{
-				r = image[i][j];
-				g = image[i][j];
-				b = image[i][j];
+				r = image[i * h + j];
+				g = r;
+				b = r;
 			}
 			else
 			{
-				r = image[i][j * 3 + 2];
-				g = image[i][j * 3 + 1];
-				b = image[i][j * 3];
+				r = image[(i * w + j) * 3 + 2];
+				g = image[(i * w + j) * 3 + 1];
+				b = image[(i * w + j) * 3];
 			}
 			
 			if (r > 255) r=255;
