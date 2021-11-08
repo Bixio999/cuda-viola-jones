@@ -9,6 +9,7 @@
 #define max(a,b) (a > b? a : b)
 
 #include "classifier.h"
+#include "utils/common.h"
 
 typedef struct filter{
     Rectangle rect1;
@@ -24,27 +25,82 @@ typedef struct filter{
 
 typedef struct classifier
 {
-    Filter*** filters;
-    int* filters_per_stages;
+    Filter* filters;
+    short* filters_per_stages;
     int* stage_thresholds;
-    int n_stages;
+    short n_stages;
 } Classifier;
 
 const int window_size = 24;
 
 Classifier* classifier;
 
-bool load_classifier(const char* classifier_path, const char* config_path)
+__global__ void print_classifier(Classifier* classifier)
+{
+    printf("\n- printing classifier to check correct loading... -\n\n");
+
+    short* filter_per_stages = classifier->filters_per_stages;
+    short stages = classifier->n_stages;
+    Filter* filters = classifier->filters;
+    int* stage_thresholds = classifier->stage_thresholds;
+
+    printf("\n\t\tstages = %hu", stages);
+
+    printf("\n\n\t- printing filter per stages... -");
+    int i;
+    for (i = 0; i < stages; i++)
+        printf("\n\t\tfilter_per_stages[%d] = %hu", i, filter_per_stages[i]);
+
+    printf("\n\n\t- printing stage thresholds... -");
+    for (i = 0; i < stages; i++)
+        printf("\n\t\tstage_thresholds[%d] = %d", i, stage_thresholds[i]);
+
+    Filter* f = filters;
+    int j;
+    printf("\n\n\t- printing filters... -");
+    for (i = 0; i < stages; i++)
+    {
+        for (j = 0; j < filter_per_stages[i]; j++)
+        {
+            printf("\n\n\t\t- printing filter n. %d from stage %d... -", j+1, i+1);
+
+            Rectangle* r = &(f->rect1);
+
+            printf("\n\t\t\trectangle 1: { x = %hu, y = %hu, size.width = %u, size.height = %u }", r->x, r->y, r->size.width, r->size.height);
+            printf("\n\t\t\tweight1 = %d", f->weight1);
+
+            r = &(f->rect2);
+            printf("\n\t\t\trectangle 2: { x = %hu, y = %hu, size.width = %u, size.height = %u }", r->x, r->y, r->size.width, r->size.height);
+            printf("\n\t\t\tweight2 = %d", f->weight2);
+
+            r = &(f->rect3);
+            printf("\n\t\t\trectangle 3: { x = %hu, y = %hu, size.width = %u, size.height = %u }", r->x, r->y, r->size.width, r->size.height);
+            printf("\n\t\t\tweight3 = %d", f->weight3);
+
+            printf("\n\t\t\tthreshold = %d", f->threshold);
+            printf("\n\t\t\talpha1 = %d", f->alpha1);
+            printf("\n\t\t\talpha2 = %d", f->alpha2);
+
+            f++;
+        }
+    }
+}
+
+bool load_classifier_to_gpu(const char* classifier_path, const char* config_path)
 {
     if (classifier_path && config_path)
     {
         printf("\nnot null parameters: %s, %s", classifier_path, config_path);
 
+        Filter* dev_filters;
+        short* dev_filter_per_stages;
+        int* dev_stage_thresholds;
+
         FILE* config_file = fopen(config_path, "r");
 
         if (!config_file)
         {
-            printf("\nerror while reading from config file. aborting...");
+            printf("\nerror while opening the config file. aborting...");
             exit(1);
         }
 
@@ -56,16 +112,20 @@ bool load_classifier(const char* classifier_path, const char* config_path)
             exit(1);
         }
         
-        int* filter_per_stages = (int*) malloc(sizeof(int) * stages);
+        short* filter_per_stages = (short*) malloc(sizeof(short) * stages);
+        
 
         int i = 0;
         int n_filters = 0;
-        int* temp = filter_per_stages;
+        int tot_filters = 0;
+        int t;
         while (i < stages && !feof(config_file))
         {
-            fscanf(config_file, "%d", temp);
+            t = 0;
+            fscanf(config_file, "%d", &t);
+            filter_per_stages[i] = (short) t;
             i++;
-            temp++;
+            tot_filters += t;
         }
 
         fclose(config_file);
@@ -77,23 +137,24 @@ bool load_classifier(const char* classifier_path, const char* config_path)
             exit(1);
         }
 
-        Filter*** filters = (Filter***) malloc(sizeof(Filter**) * stages);
+        Filter* filters = (Filter*) malloc(sizeof(Filter) * tot_filters);
+
         int* stage_thresholds = (int*) malloc(sizeof(int) * stages);
+        
 
         int j;
         int* st_thr = stage_thresholds;
+        Filter* f = filters;
         for (i = 0; i < stages; i++)
         {
             n_filters = filter_per_stages[i];
-            filters[i] = (Filter**) malloc(sizeof(Filter*) * n_filters);
 
             for (j = 0; j < n_filters && !feof(classifier_file); j++)
             {
-                Filter* f = (Filter *) malloc(sizeof(Filter));
                 Rectangle* rect = &(f->rect1);
 
-                fscanf(classifier_file, "%d", &(rect->x)); 
-                fscanf(classifier_file, "%d", &(rect->y)); 
+                fscanf(classifier_file, "%hu", &(rect->x)); 
+                fscanf(classifier_file, "%hu", &(rect->y)); 
                 fscanf(classifier_file, "%d", &(rect->size.width)); 
                 fscanf(classifier_file, "%d", &(rect->size.height));
                 
@@ -101,8 +162,8 @@ bool load_classifier(const char* classifier_path, const char* config_path)
 
                 rect = &(f->rect2);
 
-                fscanf(classifier_file, "%d", &(rect->x)); 
-                fscanf(classifier_file, "%d", &(rect->y)); 
+                fscanf(classifier_file, "%hu", &(rect->x)); 
+                fscanf(classifier_file, "%hu", &(rect->y)); 
                 fscanf(classifier_file, "%d", &(rect->size.width)); 
                 fscanf(classifier_file, "%d", &(rect->size.height));              
 
@@ -110,8 +171,8 @@ bool load_classifier(const char* classifier_path, const char* config_path)
 
                 rect = &(f->rect3);
 
-                fscanf(classifier_file, "%d", &(rect->x)); 
-                fscanf(classifier_file, "%d", &(rect->y)); 
+                fscanf(classifier_file, "%hu", &(rect->x)); 
+                fscanf(classifier_file, "%hu", &(rect->y)); 
                 fscanf(classifier_file, "%d", &(rect->size.width)); 
                 fscanf(classifier_file, "%d", &(rect->size.height));               
 
@@ -119,9 +180,9 @@ bool load_classifier(const char* classifier_path, const char* config_path)
 
                 fscanf(classifier_file, "%d", &(f->threshold));                
                 fscanf(classifier_file, "%d", &(f->alpha1));                
-                fscanf(classifier_file, "%d", &(f->alpha2));           
-
-                filters[i][j] = f;
+                fscanf(classifier_file, "%d", &(f->alpha2));   
+                
+                f++;
             }
             if (!feof(classifier_file))
                 fscanf(classifier_file, "%d", st_thr++);
@@ -129,12 +190,26 @@ bool load_classifier(const char* classifier_path, const char* config_path)
         fclose(classifier_file);
 
         Classifier* clas = (Classifier*) malloc(sizeof(Classifier));
-        clas->filters = filters;
-        clas->filters_per_stages = filter_per_stages;
-        clas->n_stages = stages;
-        clas->stage_thresholds = stage_thresholds;
 
-        classifier = clas;
+        CHECK(cudaMalloc((void**) &dev_filters, sizeof(Filter) * tot_filters));
+        CHECK(cudaMalloc((void**) &dev_stage_thresholds, sizeof(int) * stages));
+        CHECK(cudaMalloc((void**) &dev_filter_per_stages, sizeof(short) * stages));
+
+        CHECK(cudaMemcpy(dev_filters, filters, sizeof(Filter) * tot_filters, cudaMemcpyHostToDevice));
+        CHECK(cudaMemcpy(dev_filter_per_stages, filter_per_stages, sizeof(short) * stages, cudaMemcpyHostToDevice));
+        CHECK(cudaMemcpy(dev_stage_thresholds, stage_thresholds, sizeof(int) * stages, cudaMemcpyHostToDevice));
+
+        clas->filters = dev_filters;
+        clas->filters_per_stages = dev_filter_per_stages;
+        clas->n_stages = stages;
+        clas->stage_thresholds = dev_stage_thresholds;
+
+        CHECK(cudaMalloc((void**) &classifier, sizeof(Classifier)));
+        CHECK(cudaMemcpy(classifier, clas, sizeof(Classifier), cudaMemcpyHostToDevice));
+
+        // print_classifier<<<1,1>>>(classifier);
+        // cudaDeviceSynchronize();
+
         return true;
     }
     else
@@ -246,66 +321,66 @@ pel** resize_image(pel** image, Size out_size)
     return output;
 }
 
-bool runClassifier(double** iim, int y, int x, unsigned int variance)
-{
-    int stage, i;
-    unsigned int temp;
-    long int threshold, filter_sum, stage_sum;
+// bool runClassifier(double** iim, int y, int x, unsigned int variance)
+// {
+//     int stage, i;
+//     unsigned int temp;
+//     long int threshold, filter_sum, stage_sum;
 
-    for (stage = 0; stage < classifier->n_stages; stage++)
-    {
-        Filter** filters = classifier->filters[stage];
-        stage_sum = 0;
+//     for (stage = 0; stage < classifier->n_stages; stage++)
+//     {
+//         Filter** filters = classifier->filters[stage];
+//         stage_sum = 0;
 
-        for (i = 0; i < classifier->filters_per_stages[stage]; i++)
-        {
-            Filter* f = filters[i];
-            filter_sum = 0;
+//         for (i = 0; i < classifier->filters_per_stages[stage]; i++)
+//         {
+//             Filter* f = filters[i];
+//             filter_sum = 0;
             
-            threshold = (long int) f->threshold * variance;
+//             threshold = (long int) f->threshold * variance;
 
-            Rectangle* r = &(f->rect1);
+//             Rectangle* r = &(f->rect1);
 
-            temp = 0;
-            temp += iim[y + r->y + r->size.height][x + r->x + r->size.width];
-            temp += - iim[y + r->y][x + r->x + r->size.width];
-            temp += - iim[y + r->y + r->size.height][x + r->x];
-            temp += iim[y + r->y][x + r->x];
+//             temp = 0;
+//             temp += iim[y + r->y + r->size.height][x + r->x + r->size.width];
+//             temp += - iim[y + r->y][x + r->x + r->size.width];
+//             temp += - iim[y + r->y + r->size.height][x + r->x];
+//             temp += iim[y + r->y][x + r->x];
 
-            filter_sum += (long int) temp * f->weight1;
+//             filter_sum += (long int) temp * f->weight1;
 
-            r = &(f->rect2);
+//             r = &(f->rect2);
             
-            temp = 0;
-            temp += iim[y + r->y + r->size.height][x + r->x + r->size.width];
-            temp += - iim[y + r->y][x + r->x + r->size.width];
-            temp += - iim[y + r->y + r->size.height][x + r->x];
-            temp += iim[y + r->y][x + r->x];
+//             temp = 0;
+//             temp += iim[y + r->y + r->size.height][x + r->x + r->size.width];
+//             temp += - iim[y + r->y][x + r->x + r->size.width];
+//             temp += - iim[y + r->y + r->size.height][x + r->x];
+//             temp += iim[y + r->y][x + r->x];
 
-            filter_sum += (long int) temp * f->weight2;
+//             filter_sum += (long int) temp * f->weight2;
 
-            r = &(f->rect3);
+//             r = &(f->rect3);
 
-            if ( (r->x + r->y + r->size.height + r->size.width) != 0)
-            {
-                temp = 0;
-                temp += iim[y + r->y + r->size.height][x + r->x + r->size.width];
-                temp += - iim[y + r->y][x + r->x + r->size.width];
-                temp += - iim[y + r->y + r->size.height][x + r->x];
-                temp += iim[y + r->y][x + r->x];
+//             if ( (r->x + r->y + r->size.height + r->size.width) != 0)
+//             {
+//                 temp = 0;
+//                 temp += iim[y + r->y + r->size.height][x + r->x + r->size.width];
+//                 temp += - iim[y + r->y][x + r->x + r->size.width];
+//                 temp += - iim[y + r->y + r->size.height][x + r->x];
+//                 temp += iim[y + r->y][x + r->x];
 
-                filter_sum += (long int) temp * f->weight3;
-            }
+//                 filter_sum += (long int) temp * f->weight3;
+//             }
 
-            stage_sum += (long int)(filter_sum < threshold ? f->alpha1 : f->alpha2);
-        }
+//             stage_sum += (long int)(filter_sum < threshold ? f->alpha1 : f->alpha2);
+//         }
         
-        if (stage_sum < 0.4f * classifier->stage_thresholds[stage])
-            return false;
-    }
-    // printf("\n face detected in window on (%d,%d)", x, y);
-    return true;
-}
+//         if (stage_sum < 0.4f * classifier->stage_thresholds[stage])
+//             return false;
+//     }
+//     // printf("\n face detected in window on (%d,%d)", x, y);
+//     return true;
+// }
 
 void evaluate(double** iim, double** sq_iim, Size size, int currWinSize, float factor, List* faces)
 {
@@ -342,16 +417,16 @@ void evaluate(double** iim, double** sq_iim, Size size, int currWinSize, float f
 
             // FILTERS EVALUATION
 
-            if (runClassifier(iim, i, j, variance))
-            {
-                Rectangle* face = (Rectangle *) malloc(sizeof(Rectangle));
-                face->x = j * factor;
-                face->y = i * factor;
-                face->size.height = currWinSize;
-                face->size.width = currWinSize;
+            // if (runClassifier(iim, i, j, variance))
+            // {
+            //     Rectangle* face = (Rectangle *) malloc(sizeof(Rectangle));
+            //     face->x = j * factor;
+            //     face->y = i * factor;
+            //     face->size.height = currWinSize;
+            //     face->size.width = currWinSize;
 
-                add(faces, face);
-            }
+            //     add(faces, face);
+            // }
         }
     }
 }

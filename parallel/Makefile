@@ -1,4 +1,4 @@
-viola-jones: main.cu bmp_handler.cu
+viola-jones: main.cu bmp_handler.cu classifier.cu
 	nvcc -arch sm_37 -Wno-deprecated-gpu-targets main.cu bmp_handler.cu classifier.cu -o viola-jones
 
 run: 

@@ -70,8 +70,10 @@ int main(int argc, char const *argv[])
     const char* classifier_file = "../class.txt";
     const char* config_file = "info.txt";
 
-    if (load_classifier(classifier_file, config_file))
+    if (load_classifier_to_gpu(classifier_file, config_file))
         printf("\nclassifier correctly loaded.");
+    
+    
 
     float scaleFactor = 1.2f;
     int minSize = 24;
@@ -150,3 +152,4 @@ void draw_rectangle(pel** image, Rectangle* face)
         image[i] [3 * (j + face->size.width - 1)] = color_GREY;       // b
     }
 }
+
