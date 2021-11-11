@@ -447,7 +447,126 @@ void free_image(pel** image, Size size)
     free(image);
 }
 
-List* detect_multiple_faces(pel** image, float scaleFactor, int minWindow, int maxWindow)
+__global__ void cuda_integral_image_24bit(pel* image, unsigned int width, unsigned int height, long unsigned int* iim, long unsigned int* squared_iim)
+{
+    printf("\nwidth = %u, height = %u", width, height);
+    int id = blockIdx.x * blockDim.x + threadIdx.x;
+    if (id == 0)
+        printf("\nwidth = %u, height = %u", width, height);
+
+    // if (id >= width * height)
+    //     return;
+
+    int i = id / width;
+    int j = id % width;
+
+    // uint t = image[id * 3];
+
+    // iim[id] = t;
+    // squared_iim[id] = t * t;
+
+    // if (j > 0)
+    // {
+    //     iim[id] += iim[j - 1];
+    //     squared_iim[id] += squared_iim[j - 1];
+    // }
+
+    // if (i > 0)
+    // {
+    //     iim[id] += iim[(i-1) * width + j];
+    //     squared_iim[id] = iim[(i-1) * width + j];
+    // }
+
+    // if (i > 0 && j > 0)
+    // {
+    //     iim[id] -= iim[(i-1) * width + j - 1];
+    //     squared_iim[id] -= squared_iim[(i-1) * width + j - 1];
+    // }
+
+
+    bool done = false;
+
+    uint t = image[id * 3], temp, sq_temp;
+    unsigned long up, left, corner;
+
+    while(iim[width * height - 1] == 0)
+    {
+        __syncthreads();
+
+        if (id >= width * height || done)
+            continue;
+
+        if (id == 0)
+        {
+            printf("\n sono davvero in esecuzione");
+            iim[0] = t;
+            squared_iim[0] = t * t;
+            done = true;
+        }
+        else 
+        {
+            temp = t;
+            sq_temp = t * t;
+
+            if (i > 0)
+            {
+                up = iim[(i - 1) * width + j];
+                if (up > 0)
+                {
+                    temp += up;
+                    sq_temp += squared_iim[(i - 1) * width + j];
+                }
+                else
+                    continue;
+            }
+
+            if (j > 0)
+            {
+                left = iim[i * width + j - 1];
+                if (left > 0)
+                {
+                    temp += left;
+                    sq_temp += squared_iim[i * width + j - 1];
+                }
+                else
+                    continue;
+            }
+
+            if (i > 0 && j > 0)
+            {
+                corner = iim[(i - 1) * width + j - 1];
+                if (corner > 0)
+                {
+                    temp -= corner;
+                    sq_temp -= squared_iim[(i - 1) * width + j - 1];
+                }
+                else
+                    continue;
+            }
+
+            iim[id] = temp;
+            squared_iim[id] = sq_temp;
+            done = true;
+        }
+    }
+
+}
+
+__global__ void check_iim(long unsigned int* iim, unsigned int width)
+{
+    printf("\nciao");
+    int i, j;
+
+    for (i = 0; i < 5; i++)
+    {
+        for (j = 0; j < 5; j++)
+        {
+            printf("\niim[%d][%d] = %u", i, j, iim[i * width + j]);
+        }
+    }
+}
+
+List* detect_multiple_faces(pel* image, float scaleFactor, int minWindow, int maxWindow)
 {
     if (image == NULL)
         return NULL;
@@ -458,60 +577,81 @@ List* detect_multiple_faces(pel** image, float scaleFactor, int minWindow, int m
     if ( minWindow <= window_size )
     {
         Size image_size = { im.width, im.height };
-        double** iim, **squared_iim;
+
+        unsigned long nBytes = sizeof(long unsigned int) * image_size.width * image_size.height;
+
+        long unsigned int* iim, *squared_iim;
+        CHECK(cudaMalloc((void **) &iim, nBytes));
+        CHECK(cudaMalloc((void **) &squared_iim, nBytes));
+
+        CHECK(cudaMemset(iim, 0, nBytes));
+
+        uint dimBlock = 256, dimGrid;
+        int rowBlock = (image_size.width + dimBlock - 1) / dimBlock;
+        dimGrid = image_size.height * rowBlock;
+
+        printf("\nciao. bitcolor = %lu", im.bitColor);
         if (im.bitColor > 8)
         {
-            integral_image_24bit(image, image_size, &iim, &squared_iim);
+            printf("\ndimblock = %u, dimgrid = %u | width = %u, height = %u", dimBlock, dimGrid, image_size.width, image_size.height);
+            cuda_integral_image_24bit <<< dimGrid, dimBlock >>> (image, image_size.width, image_size.height, iim, squared_iim);
+            cudaDeviceSynchronize();
             printf("\nintegral image 24bit created");
+
+            check_iim <<< 1, 1 >>> (iim, image_size.width);
+            cudaDeviceSynchronize();
+            
         }
-        else
-            integral_image(image, image_size, &iim, &squared_iim);
+        // else
+        //     integral_image(image, image_size, &iim, &squared_iim);
+
+        exit(0);
         
-        evaluate(iim, squared_iim, image_size, window_size, 1, faces);
-        free_integral_image(iim, image_size);
-        free_integral_image(squared_iim, image_size);
-        printf("\niims deleted and memory free");
+        // evaluate(iim, squared_iim, image_size, window_size, 1, faces);
+        // free_integral_image(iim, image_size);
+        // free_integral_image(squared_iim, image_size);
+        // printf("\niims deleted and memory free");
     }
 
-    if ( maxWindow < window_size )
-        maxWindow = min(im.width, im.height);
+    // if ( maxWindow < window_size )
+    //     maxWindow = min(im.width, im.height);
     
-    printf("\nmaxWindow = %d", maxWindow);
+    // printf("\nmaxWindow = %d", maxWindow);
 
-    float currFactor;
-    int iteration = 1;
-    printf("\ncreating image pyramid...");
-    for (currFactor = scaleFactor; ; currFactor*= scaleFactor, iteration++)
-    {
-        Size temp_size = { round(im.width / currFactor), round(im.height / currFactor) };
+    // float currFactor;
+    // int iteration = 1;
+    // printf("\ncreating image pyramid...");
+    // for (currFactor = scaleFactor; ; currFactor*= scaleFactor, iteration++)
+    // {
+    //     Size temp_size = { round(im.width / currFactor), round(im.height / currFactor) };
 
-        int curr_winSize = round(window_size * currFactor);
+    //     int curr_winSize = round(window_size * currFactor);
 
-        if (minWindow > curr_winSize)
-            continue;
+    //     if (minWindow > curr_winSize)
+    //         continue;
 
-        if (maxWindow < curr_winSize)
-            break;
+    //     if (maxWindow < curr_winSize)
+    //         break;
 
-        char file_name[19];
-        snprintf(file_name, 19, "resized/img_%d.bmp", iteration);
+    //     char file_name[19];
+    //     snprintf(file_name, 19, "resized/img_%d.bmp", iteration);
 
-        pel** res_im = resize_image(image, temp_size);
+    //     pel** res_im = resize_image(image, temp_size);
         
-        // write_new_BMP(file_name, res_im, temp_size.height, temp_size.width, 8);
+    //     // write_new_BMP(file_name, res_im, temp_size.height, temp_size.width, 8);
 
-        double** iim, **squared_iim;
+    //     double** iim, **squared_iim;
 
-        integral_image(res_im, temp_size, &iim, &squared_iim);
+    //     integral_image(res_im, temp_size, &iim, &squared_iim);
 
-        evaluate(iim, squared_iim, temp_size, curr_winSize, currFactor, faces);
+    //     evaluate(iim, squared_iim, temp_size, curr_winSize, currFactor, faces);
 
-        free_image(res_im, temp_size);
-        free_integral_image(iim, temp_size);
-        free_integral_image(squared_iim, temp_size);
+    //     free_image(res_im, temp_size);
+    //     free_integral_image(iim, temp_size);
+    //     free_integral_image(squared_iim, temp_size);
 
-        // TODO GROUP RECTANGLES
-    }
+    //     // TODO GROUP RECTANGLES
+    // }
     return faces;
 }
 

@@ -79,7 +79,7 @@ int main(int argc, char const *argv[])
     int minSize = 24;
     int maxSize = 0;
 
-    // List* face = detect_multiple_faces(image, scaleFactor, minSize, maxSize);
+    List* face = detect_multiple_faces(dev_image, scaleFactor, minSize, maxSize);
 
     // printf("\nDetected %d faces in image. Starting drawing...", face->size);
     
@@ -94,6 +94,7 @@ int main(int argc, char const *argv[])
     // else
     //     printf("\n no faces detected in given image.\n");
     // writeBMP(original_image, "out_2.bmp");
+    cudaDeviceReset();
     exit(0);
 }
 

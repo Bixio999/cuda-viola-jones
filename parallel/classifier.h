@@ -32,6 +32,5 @@ void add(List* list, Rectangle* r);
 Rectangle* remove_from_head(List* list);
 
 bool load_classifier_to_gpu(const char* classifier_path, const char* config_path);
-// Rectangle* detect_single_face(Classifier* classifier, pel** image, float scaleFactor, Size minWindow, Size maxWindow);
-List* detect_multiple_faces(pel** image, float scaleFactor, int minWindow, int maxWindow);
+List* detect_multiple_faces(pel* image, float scaleFactor, int minWindow, int maxWindow);
 

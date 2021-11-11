@@ -154,3 +154,4 @@ Temporary Items
 # End of https://www.toptal.com/developers/gitignore/api/visualstudiocode,macos,c++,c,cuda,opencv
 sequential/compile-command.txt
 sequential/viola-jones
+parallel/set_env
