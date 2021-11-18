@@ -14,6 +14,8 @@
 #include "classifier.h"
 #include "utils/common.h"
 
+#define WINDOW_SIZE 24
+
 typedef struct filter{
     Rectangle rect1;
     int weight1;
@@ -33,8 +35,6 @@ typedef struct classifier
     int* stage_thresholds;
     short n_stages;
 } Classifier;
-
-const int window_size = 24;
 
 Classifier* classifier;
 
@@ -220,86 +220,6 @@ bool load_classifier_to_gpu(const char* classifier_path, const char* config_path
     return false;
 }
 
-void integral_image_24bit(pel** image, Size size, double*** int_im, double*** squared_int_im)
-{
-    double** iim = (double**) malloc(size.height * sizeof(double*));
-    double** squared_iim = (double**) malloc(size.height * sizeof(double*));
-    unsigned int i;
-    for (i = 0; i < size.height; i++)
-    {
-        iim[i] = (double *) malloc(size.width * sizeof(double));
-        squared_iim[i] = (double *) malloc(size.width * sizeof(double));
-    }
-
-    iim[0][0] = image[0][0];
-    squared_iim[0][0] = image[0][0] * image[0][0]; 
-
-    unsigned int j;
-    for (i = 1; i < size.height; i++)
-    {
-        iim[i][0] = iim[i-1][0] + image[i][0];
-        squared_iim[i][0] = squared_iim[i-1][0] + image[i][0] * image[i][0];
-    }
-
-    for (i = 1; i < size.width; i++)
-    {
-        iim[0][i] = iim[0][i-1] + image[0][i * 3];
-        squared_iim[0][i] = squared_iim[0][i-1] + image[0][i * 3] * image[0][i * 3];
-    }
-
-    for (i = 1; i < size.height; i++)
-    {
-        for (j = 1; j < size.width; j++)
-        {
-            iim[i][j] = iim[i-1][j] + iim[i][j-1] - iim[i-1][j-1] + image[i][j * 3];
-            squared_iim[i][j] = squared_iim[i-1][j] + squared_iim[i][j-1] - squared_iim[i-1][j-1] + image[i][j * 3] * image[i][j * 3];
-        }
-    }
-
-    *int_im = iim;
-    *squared_int_im = squared_iim;
-}
-
-void integral_image(pel** image, Size size, double*** int_im, double*** squared_int_im)
-{
-    double** iim = (double**) malloc(size.height * sizeof(double*));
-    double** squared_iim = (double**) malloc(size.height * sizeof(double*));
-    unsigned int i;
-    for (i = 0; i < size.height; i++)
-    {
-        iim[i] = (double *) malloc(size.width * sizeof(double));
-        squared_iim[i] = (double *) malloc(size.width * sizeof(double));
-    }
-
-    iim[0][0] = image[0][0];
-    squared_iim[0][0] = image[0][0] * image[0][0]; 
-
-    unsigned int j;
-    for (i = 1; i < size.height; i++)
-    {
-        iim[i][0] = iim[i-1][0] + image[i][0];
-        squared_iim[i][0] = squared_iim[i-1][0] + image[i][0] * image[i][0];
-    }
-
-    for (i = 1; i < size.width; i++)
-    {
-        iim[0][i] = iim[0][i-1] + image[0][i];
-        squared_iim[0][i] = squared_iim[0][i-1] + image[0][i] * image[0][i];
-    }
-
-    for (i = 1; i < size.height; i++)
-    {
-        for (j = 1; j < size.width; j++)
-        {
-            iim[i][j] = iim[i-1][j] + iim[i][j-1] - iim[i-1][j-1] + image[i][j];
-            squared_iim[i][j] = squared_iim[i-1][j] + squared_iim[i][j-1] - squared_iim[i-1][j-1] + image[i][j] * image[i][j];
-        }
-    }
-
-    *(int_im) = iim;
-    *(squared_int_im) = squared_iim;
-}
-
 pel** resize_image(pel** image, Size out_size)
 {
     float resize_factor = (float) im.height / out_size.height;
@@ -385,54 +305,158 @@ pel** resize_image(pel** image, Size out_size)
 //     return true;
 // }
 
-void evaluate(long unsigned int* iim, long unsigned int* sq_iim, Size size, int currWinSize, float factor, List* faces)
+__global__ void cuda_evaluate(Classifier* classifier, long unsigned int* iim, long unsigned int* sq_iim, unsigned int width, unsigned int height, int currWinSize, float factor, Rectangle** faces)
 {
-    int i, j, stage, k;
-    unsigned int variance, mean;
+    unsigned long id = blockIdx.x * blockDim.x + threadIdx.x;
 
-    for (i = 0; i < size.height - window_size; i++)
+    if (id >= (height - WINDOW_SIZE) * (width - WINDOW_SIZE))
+        return;
+
+    unsigned int variance, mean, y, x;
+
+    y = floor((float) id / width);
+    x = id % width;
+
+    mean = iim[(y + WINDOW_SIZE - 1) * width + x + WINDOW_SIZE - 1];
+    variance = sq_iim[(y + WINDOW_SIZE - 1) * width + x + WINDOW_SIZE - 1];
+
+    if (y > 0)
     {
-        for (j = 0; j < size.width - window_size; j++)
-        {
-            /// VARIANCE COMPUTATION
-
-            mean = iim[i + window_size - 1][j + window_size - 1];
-            variance = sq_iim[i + window_size - 1][j + window_size - 1];
-
-            if (i > 0)
-            {
-                mean -= iim[i-1][j];
-                variance -= sq_iim[i-1][j];
-            }
-            if (j > 0)
-            {
-                mean -= iim[i][j-1];
-                variance -= sq_iim[i][j-1];
-            }
-            if (i > 0 && j > 0)
-            {
-                mean += iim[i-1][j-1];
-                variance += sq_iim[i-1][j-1];
-            }
-
-            variance = (variance * (window_size * window_size)) - mean * mean;
-            variance = variance > 0 ? sqrt(variance) : 1;
-
-            // FILTERS EVALUATION
-
-            // if (runClassifier(iim, i, j, variance))
-            // {
-            //     Rectangle* face = (Rectangle *) malloc(sizeof(Rectangle));
-            //     face->x = j * factor;
-            //     face->y = i * factor;
-            //     face->size.height = currWinSize;
-            //     face->size.width = currWinSize;
-
-            //     add(faces, face);
-            // }
-        }
+        mean -= iim[(y - 1) * width + x];
+        variance -= sq_iim[(y - 1) * width + x];
     }
+    if (y > 0)
+    {
+        mean -= iim[y * width + x - 1];
+        variance -= sq_iim[y * width + x - 1];
+    }
+    if (y > 0 && x > 0)
+    {
+        mean += iim[(y - 1) * width + x - 1];
+        variance += sq_iim[(y - 1) * width + x - 1];
+    }
+
+    variance = (variance * (WINDOW_SIZE * WINDOW_SIZE)) - mean * mean;
+    variance = variance > 0 ? sqrt((double) variance) : 1;
+
+    // RUNNING CLASSIFIER
+
+    int stage, i;
+    unsigned int temp;
+    long int threshold, filter_sum, stage_sum;
+    Filter* f = classifier->filters;
+
+    for (stage = 0; stage < classifier->n_stages; stage++)
+    {
+        
+        stage_sum = 0;
+
+        for (i = 0; i < classifier->filters_per_stages[stage]; i++)
+        {
+            filter_sum = 0;
+
+            threshold = (long int) f->threshold * variance;
+
+            Rectangle* r = &(f->rect1);
+
+            temp = 0;
+            temp += iim[(y + r->y + r->size.height) * width + (x + r->x + r->size.height)];
+            temp += - iim[(y + r->y) * width + (x + r->x + r->size.width)];
+            temp += - iim[(y + r->y + r->size.height) * width + (x + r->x)];
+            temp += iim[(y + r->y) * width + (x + r->x)];
+
+            filter_sum += (long int) temp * f->weight1;
+
+            r = &(f->rect2);
+
+            temp = 0;
+            temp += iim[(y + r->y + r->size.height) * width + (x + r->x + r->size.height)];
+            temp += - iim[(y + r->y) * width + (x + r->x + r->size.width)];
+            temp += - iim[(y + r->y + r->size.height) * width + (x + r->x)];
+            temp += iim[(y + r->y) * width + (x + r->x)];
+
+            filter_sum += (long int) temp * f->weight2;
+
+            r = &(f->rect3);
+
+            if ( (r->x + r->y + r->size.height + r->size.width) != 0)
+            {
+                temp = 0;
+                temp += iim[(y + r->y + r->size.height) * width + (x + r->x + r->size.height)];
+                temp += - iim[(y + r->y) * width + (x + r->x + r->size.width)];
+                temp += - iim[(y + r->y + r->size.height) * width + (x + r->x)];
+                temp += iim[(y + r->y) * width + (x + r->x)];
+
+                filter_sum += (long int) temp * f->weight3;
+            }
+
+            stage_sum += (long int) (filter_sum < threshold ? f->alpha1 : f->alpha2);
+
+            f++;
+        }
+
+        if (stage_sum < 0.4f * classifier->stage_thresholds[stage])
+            return;
+    }
+
+    Rectangle* face = (Rectangle*) malloc(sizeof(Rectangle));
+    face->x = x * factor;
+    face->y = y * factor;
+    face->size.height = currWinSize;
+    face->size.width = currWinSize;
+
+    faces[id] = face;
+    printf("\ndetected face at (%u, %u).", x,y);
 }
+
+// void evaluate(long unsigned int* iim, long unsigned int* sq_iim, Size size, int currWinSize, float factor, Rectangle** faces)
+// {
+//     int i, j;
+//     unsigned int variance, mean;
+
+//     for (i = 0; i < size.height - WINDOW_SIZE; i++)
+//     {
+//         for (j = 0; j < size.width - WINDOW_SIZE; j++)
+//         {
+//             /// VARIANCE COMPUTATION
+
+//             mean = iim[i + WINDOW_SIZE - 1][j + WINDOW_SIZE - 1];
+//             variance = sq_iim[i + WINDOW_SIZE - 1][j + WINDOW_SIZE - 1];
+
+//             if (i > 0)
+//             {
+//                 mean -= iim[i-1][j];
+//                 variance -= sq_iim[i-1][j];
+//             }
+//             if (j > 0)
+//             {
+//                 mean -= iim[i][j-1];
+//                 variance -= sq_iim[i][j-1];
+//             }
+//             if (i > 0 && j > 0)
+//             {
+//                 mean += iim[i-1][j-1];
+//                 variance += sq_iim[i-1][j-1];
+//             }
+
+//             variance = (variance * (WINDOW_SIZE * WINDOW_SIZE)) - mean * mean;
+//             variance = variance > 0 ? sqrt(variance) : 1;
+
+//             // FILTERS EVALUATION
+
+//             // if (runClassifier(iim, i, j, variance))
+//             // {
+//             //     Rectangle* face = (Rectangle *) malloc(sizeof(Rectangle));
+//             //     face->x = j * factor;
+//             //     face->y = i * factor;
+//             //     face->size.height = currWinSize;
+//             //     face->size.width = currWinSize;
+
+//             //     add(faces, face);
+//             // }
+//         }
+//     }
+// }
 
 __global__ void cuda_integral_image_24bit(pel* image, unsigned int width, unsigned int height, long unsigned int* iim, long unsigned int* squared_iim)
 {
@@ -512,15 +536,15 @@ __global__ void cuda_integral_image(pel* image, unsigned int width, unsigned int
 
 }
 
-List* detect_multiple_faces(pel* image, float scaleFactor, int minWindow, int maxWindow)
+Rectangle** detect_multiple_faces(pel* image, float scaleFactor, int minWindow, int maxWindow)
 {
     if (image == NULL)
         return NULL;
-        
-    List* faces = listInit();
-    printf("\n list init completed");
 
-    if ( minWindow <= window_size )
+    Rectangle** faces;
+    CHECK(cudaMalloc((void **) &faces, sizeof(Rectangle*) * im.width * im.height));
+
+    if ( minWindow <= WINDOW_SIZE )
     {
         Size image_size = { im.width, im.height };
 
@@ -544,16 +568,24 @@ List* detect_multiple_faces(pel* image, float scaleFactor, int minWindow, int ma
         }
         else
             cuda_integral_image <<< dimGrid, dimBlock >>> (image, image_size.width, image_size.height, iim, squared_iim);
-
-        exit(0);
         
-        // evaluate(iim, squared_iim, image_size, window_size, 1, faces);
-        // free_integral_image(iim, image_size);
-        // free_integral_image(squared_iim, image_size);
-        // printf("\niims deleted and memory free");
+        int rowBlock = (image_size.width + dimBlock - 1) / dimBlock;
+        dimGrid = image_size.height * rowBlock;
+
+        cuda_evaluate <<< dimGrid, dimBlock >>>(classifier, iim, squared_iim, image_size.width, image_size.height, WINDOW_SIZE, 1, faces);
+
+        cudaDeviceSynchronize();
+        // print_classifier<<<1,1>>>(classifier);
+        // cudaDeviceSynchronize();
+
+        CHECK(cudaFree(iim));
+        CHECK(cudaFree(squared_iim));
+        printf("\niims deleted and memory free");
+
+        // exit(0);
     }
 
-    // if ( maxWindow < window_size )
+    // if ( maxWindow < WINDOW_SIZE )
     //     maxWindow = min(im.width, im.height);
     
     // printf("\nmaxWindow = %d", maxWindow);
@@ -565,7 +597,7 @@ List* detect_multiple_faces(pel* image, float scaleFactor, int minWindow, int ma
     // {
     //     Size temp_size = { round(im.width / currFactor), round(im.height / currFactor) };
 
-    //     int curr_winSize = round(window_size * currFactor);
+    //     int curr_winSize = round(WINDOW_SIZE * currFactor);
 
     //     if (minWindow > curr_winSize)
     //         continue;

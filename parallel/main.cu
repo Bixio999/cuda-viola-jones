@@ -79,7 +79,7 @@ int main(int argc, char const *argv[])
     int minSize = 24;
     int maxSize = 0;
 
-    List* face = detect_multiple_faces(dev_image, scaleFactor, minSize, maxSize);
+    Rectangle** face = detect_multiple_faces(dev_image, scaleFactor, minSize, maxSize);
 
     // printf("\nDetected %d faces in image. Starting drawing...", face->size);
     
