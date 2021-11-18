@@ -5,8 +5,11 @@
 #include <string.h>
 #include <stddef.h>
 
+#include <math_functions.h>
+
 #define min(a,b) (a < b? a : b)
 #define max(a,b) (a > b? a : b)
+#define atomicAdd(a,b) atomicAdd((int*) a, (int) b)
 
 #include "classifier.h"
 #include "utils/common.h"
@@ -382,7 +385,7 @@ pel** resize_image(pel** image, Size out_size)
 //     return true;
 // }
 
-void evaluate(double** iim, double** sq_iim, Size size, int currWinSize, float factor, List* faces)
+void evaluate(long unsigned int* iim, long unsigned int* sq_iim, Size size, int currWinSize, float factor, List* faces)
 {
     int i, j, stage, k;
     unsigned int variance, mean;
@@ -431,139 +434,82 @@ void evaluate(double** iim, double** sq_iim, Size size, int currWinSize, float f
     }
 }
 
-void free_integral_image(double** iim, Size size)
-{
-    int i;
-    for (i = 0; i < size.height; i++)
-        free(iim[i]);
-    free(iim);
-}
-
-void free_image(pel** image, Size size)
-{
-    int i;
-    for (i = 0; i < size.height; i++)
-        free(image[i]);
-    free(image);
-}
-
 __global__ void cuda_integral_image_24bit(pel* image, unsigned int width, unsigned int height, long unsigned int* iim, long unsigned int* squared_iim)
 {
-    printf("\nwidth = %u, height = %u", width, height);
-    int id = blockIdx.x * blockDim.x + threadIdx.x;
-    if (id == 0)
-        printf("\nwidth = %u, height = %u", width, height);
+    unsigned long id = blockIdx.x * blockDim.x + threadIdx.x;
 
-    // if (id >= width * height)
-    //     return;
+    long unsigned int sum = 0, sq_sum = 0, offset;
 
-    int i = id / width;
-    int j = id % width;
+    uint t;
 
-    // uint t = image[id * 3];
+    int i;
 
-    // iim[id] = t;
-    // squared_iim[id] = t * t;
-
-    // if (j > 0)
-    // {
-    //     iim[id] += iim[j - 1];
-    //     squared_iim[id] += squared_iim[j - 1];
-    // }
-
-    // if (i > 0)
-    // {
-    //     iim[id] += iim[(i-1) * width + j];
-    //     squared_iim[id] = iim[(i-1) * width + j];
-    // }
-
-    // if (i > 0 && j > 0)
-    // {
-    //     iim[id] -= iim[(i-1) * width + j - 1];
-    //     squared_iim[id] -= squared_iim[(i-1) * width + j - 1];
-    // }
-
-
-    bool done = false;
-
-    uint t = image[id * 3], temp, sq_temp;
-    unsigned long up, left, corner;
-
-    while(iim[width * height - 1] == 0)
+    if (id < width)
     {
-        __syncthreads();
-
-        if (id >= width * height || done)
-            continue;
-
-        if (id == 0)
+        for (i = 0; i < height; i++)
         {
-            printf("\n sono davvero in esecuzione");
-            iim[0] = t;
-            squared_iim[0] = t * t;
-            done = true;
+            offset = i * width + id;
+            t = image[offset * 3];
+            sum += t;
+            sq_sum += t * t;
+
+            atomicAdd(iim + offset, sum);
+            atomicAdd(squared_iim + offset, sq_sum);
         }
-        else 
+    }
+    else if (id < width + height)
+    {
+        for (i = 0; i < width; i++)
         {
-            temp = t;
-            sq_temp = t * t;
+            offset = (id - width) * width + i;
+            t = image[offset * 3];
+            sum += t;
+            sq_sum += t * t;
 
-            if (i > 0)
-            {
-                up = iim[(i - 1) * width + j];
-                if (up > 0)
-                {
-                    temp += up;
-                    sq_temp += squared_iim[(i - 1) * width + j];
-                }
-                else
-                    continue;
-            }
-
-            if (j > 0)
-            {
-                left = iim[i * width + j - 1];
-                if (left > 0)
-                {
-                    temp += left;
-                    sq_temp += squared_iim[i * width + j - 1];
-                }
-                else
-                    continue;
-            }
-
-            if (i > 0 && j > 0)
-            {
-                corner = iim[(i - 1) * width + j - 1];
-                if (corner > 0)
-                {
-                    temp -= corner;
-                    sq_temp -= squared_iim[(i - 1) * width + j - 1];
-                }
-                else
-                    continue;
-            }
-
-            iim[id] = temp;
-            squared_iim[id] = sq_temp;
-            done = true;
+            atomicAdd(iim + offset, sum);
+            atomicAdd(squared_iim + offset, sq_sum);
         }
     }
 
 }
 
-__global__ void check_iim(long unsigned int* iim, unsigned int width)
+__global__ void cuda_integral_image(pel* image, unsigned int width, unsigned int height, long unsigned int* iim, long unsigned int* squared_iim)
 {
-    printf("\nciao");
-    int i, j;
+    unsigned long id = blockIdx.x * blockDim.x + threadIdx.x;
 
-    for (i = 0; i < 5; i++)
+    long unsigned int sum = 0, sq_sum = 0, offset;
+
+    uint t;
+
+    int i;
+
+    if (id < width)
     {
-        for (j = 0; j < 5; j++)
+        for (i = 0; i < height; i++)
         {
-            printf("\niim[%d][%d] = %u", i, j, iim[i * width + j]);
+            offset = i * width + id;
+            t = image[offset];
+            sum += t;
+            sq_sum += t * t;
+
+            atomicAdd(iim + offset, sum);
+            atomicAdd(squared_iim + offset, sq_sum);
         }
     }
+    else if (id < width + height)
+    {
+        for (i = 0; i < width; i++)
+        {
+            offset = (id - width) * width + i;
+            t = image[offset];
+            sum += t;
+            sq_sum += t * t;
+
+            atomicAdd(iim + offset, sum);
+            atomicAdd(squared_iim + offset, sq_sum);
+        }
+    }
+
 }
 
 List* detect_multiple_faces(pel* image, float scaleFactor, int minWindow, int maxWindow)
@@ -587,23 +533,17 @@ List* detect_multiple_faces(pel* image, float scaleFactor, int minWindow, int ma
         CHECK(cudaMemset(iim, 0, nBytes));
 
         uint dimBlock = 256, dimGrid;
-        int rowBlock = (image_size.width + dimBlock - 1) / dimBlock;
-        dimGrid = image_size.height * rowBlock;
+        dimGrid = ceil((float) (image_size.width + image_size.height) / dimBlock);
 
-        printf("\nciao. bitcolor = %lu", im.bitColor);
         if (im.bitColor > 8)
         {
             printf("\ndimblock = %u, dimgrid = %u | width = %u, height = %u", dimBlock, dimGrid, image_size.width, image_size.height);
             cuda_integral_image_24bit <<< dimGrid, dimBlock >>> (image, image_size.width, image_size.height, iim, squared_iim);
-            cudaDeviceSynchronize();
-            printf("\nintegral image 24bit created");
-
-            check_iim <<< 1, 1 >>> (iim, image_size.width);
-            cudaDeviceSynchronize();
-            
+            // cudaDeviceSynchronize();
+            printf("\nintegral image 24bit created");         
         }
-        // else
-        //     integral_image(image, image_size, &iim, &squared_iim);
+        else
+            cuda_integral_image <<< dimGrid, dimBlock >>> (image, image_size.width, image_size.height, iim, squared_iim);
 
         exit(0);
         
