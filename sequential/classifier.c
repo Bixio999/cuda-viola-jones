@@ -222,9 +222,9 @@ void integral_image(pel** image, Size size, double*** int_im, double*** squared_
     *(squared_int_im) = squared_iim;
 }
 
-pel** resize_image(pel** image, Size out_size)
+pel** resize_image(pel** image, Size out_size, float resize_factor)
 {
-    float resize_factor = (float) im.height / out_size.height;
+    // float resize_factor = (float) im.height / out_size.height;
     printf("\nresizing factor: %f | height = %d, width = %d", resize_factor, out_size.height, out_size.width);
 
     pel** output = (pel**) malloc(sizeof(pel*) * out_size.height);
@@ -266,21 +266,27 @@ bool runClassifier(double** iim, int y, int x, unsigned int variance)
 
             Rectangle* r = &(f->rect1);
 
+            double a,b,c,d;
+
             temp = 0;
-            temp += iim[y + r->y + r->size.height][x + r->x + r->size.width];
-            temp += - iim[y + r->y][x + r->x + r->size.width];
-            temp += - iim[y + r->y + r->size.height][x + r->x];
-            temp += iim[y + r->y][x + r->x];
+            a = iim[y + r->y + r->size.height][x + r->x + r->size.width];
+            b = - iim[y + r->y][x + r->x + r->size.width];
+            c = - iim[y + r->y + r->size.height][x + r->x];
+            d = iim[y + r->y][x + r->x];
+
+            temp = a + b + c + d;
 
             filter_sum += (long int) temp * f->weight1;
 
             r = &(f->rect2);
             
             temp = 0;
-            temp += iim[y + r->y + r->size.height][x + r->x + r->size.width];
-            temp += - iim[y + r->y][x + r->x + r->size.width];
-            temp += - iim[y + r->y + r->size.height][x + r->x];
-            temp += iim[y + r->y][x + r->x];
+            a = iim[y + r->y + r->size.height][x + r->x + r->size.width];
+            b = - iim[y + r->y][x + r->x + r->size.width];
+            c = - iim[y + r->y + r->size.height][x + r->x];
+            d = iim[y + r->y][x + r->x];
+
+            temp = a + b + c + d;
 
             filter_sum += (long int) temp * f->weight2;
 
@@ -289,10 +295,12 @@ bool runClassifier(double** iim, int y, int x, unsigned int variance)
             if ( (r->x + r->y + r->size.height + r->size.width) != 0)
             {
                 temp = 0;
-                temp += iim[y + r->y + r->size.height][x + r->x + r->size.width];
-                temp += - iim[y + r->y][x + r->x + r->size.width];
-                temp += - iim[y + r->y + r->size.height][x + r->x];
-                temp += iim[y + r->y][x + r->x];
+                a = iim[y + r->y + r->size.height][x + r->x + r->size.width];
+                b = - iim[y + r->y][x + r->x + r->size.width];
+                c = - iim[y + r->y + r->size.height][x + r->x];
+                d = iim[y + r->y][x + r->x];
+
+                temp = a + b + c + d;
 
                 filter_sum += (long int) temp * f->weight3;
             }
@@ -323,13 +331,13 @@ void evaluate(double** iim, double** sq_iim, Size size, int currWinSize, float f
 
             if (i > 0)
             {
-                mean -= iim[i-1][j];
-                variance -= sq_iim[i-1][j];
+                mean -= iim[i-1][j + window_size - 1];
+                variance -= sq_iim[i-1][j + window_size - 1];
             }
             if (j > 0)
             {
-                mean -= iim[i][j-1];
-                variance -= sq_iim[i][j-1];
+                mean -= iim[i + window_size - 1][j-1];
+                variance -= sq_iim[i + window_size - 1][j-1];
             }
             if (i > 0 && j > 0)
             {
@@ -345,8 +353,8 @@ void evaluate(double** iim, double** sq_iim, Size size, int currWinSize, float f
             if (runClassifier(iim, i, j, variance))
             {
                 Rectangle* face = malloc(sizeof(Rectangle));
-                face->x = j * factor;
-                face->y = i * factor;
+                face->x = floor(j * factor);
+                face->y = floor(i * factor);
                 face->size.height = currWinSize;
                 face->size.width = currWinSize;
 
@@ -421,7 +429,7 @@ List* detect_multiple_faces(pel** image, float scaleFactor, int minWindow, int m
         char file_name[19];
         snprintf(file_name, 19, "resized/img_%d.bmp", iteration);
 
-        pel** res_im = resize_image(image, temp_size);
+        pel** res_im = resize_image(image, temp_size, currFactor);
         
         write_new_BMP(file_name, res_im, temp_size.height, temp_size.width, 8);
 
