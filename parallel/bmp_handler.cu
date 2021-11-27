@@ -103,7 +103,6 @@ void writeBMP(pel* img, char* filename) {
 	for (x = 0; x < 54; x++)
 		fputc(im.header[x], f);
 
-	unsigned int y;
 	//write data
 
 	if (im.bitColor <= 8)
@@ -140,7 +139,7 @@ __global__ void cuda_rgb2grey(pel* image, int size)
 	{
 		int pixId = id * 3;
 
-		pel grey_val = (pel) (0.3f * image[pixId + 2] + 0.59f * image[pixId + 1] + 0.11f * image[pixId]);
+		pel grey_val = (pel) roundf(0.3f * image[pixId + 2] + 0.59f * image[pixId + 1] + 0.11f * image[pixId]);
 
 		image[pixId] = grey_val;
 		image[pixId + 1] = grey_val;
@@ -178,7 +177,7 @@ void write_new_BMP(char* dest_path, pel* image, int h, int w, int bitColor)
 	img = (unsigned char *)malloc(3 * w * h);
 	memset(img,0,3*w*h);
 
-	int i, j, x, y;
+	int i, j;
 	int r, g ,b;
 	for(i=0; i<h; i++)
 	{

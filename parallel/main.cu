@@ -11,8 +11,83 @@
 
 struct Image im;
 
-double** integral_image(pel** image);
-void draw_rectangle(pel** image, Rectangle* face);
+
+void compare_grey_images(pel* dev_grey, pel* image);
+
+
+__global__ void cuda_draw_rectangles(Rectangle** faces, pel* image, unsigned int width, unsigned int height, bool rgb)
+{
+    unsigned long id = blockIdx.x * blockDim.x + threadIdx.x;
+
+    if (id >= width * height)
+        return;
+
+    Rectangle* face = faces[id];
+
+    if (face == NULL)
+        return;
+
+    short color_RGB = 255;
+    short color_GREY = 150;
+
+    uint i, j;
+    if (rgb)
+    {
+        for (i = face->y, j = face->x; j < face->x + face->size.width; j++)
+        {
+            image[(i * width + j) * 3 + 2] = color_RGB;
+            image[(i * width + j) * 3 + 1] = 0;
+            image[(i * width + j) * 3] = 0;
+            // image[i * width + 3 * j + 1] = 0;
+            // image[i * width + 3 * j] = 0;
+
+            image[((i + face->size.height - 1) * width + j) * 3 + 2] = color_RGB;
+            image[((i + face->size.height - 1) * width + j) * 3 + 1] = 0;
+            image[((i + face->size.height - 1) * width + j) * 3] = 0;
+            // image[(i + face->size.height - 1) * width + 3 * j + 1] = 0;
+            // image[(i + face->size.height - 1) * width + 3 * j] = 0;
+        }
+
+        for (i = face->y, j = face->x; i < face->y + face->size.height; i++)
+        {
+            image[(i * width + j) * 3 + 2] = color_RGB; // r
+            image[(i * width + j) * 3 + 1] = 0; // r
+            image[(i * width + j) * 3] = 0; // r
+            // image[i * width + 3 * j + 1] = 0;   // g
+            // image[i * width + 3 * j] = 0;       // b
+
+            image[(i * width + j + face->size.width - 1) * 3 + 2] = color_RGB; // r
+            image[(i * width + j + face->size.width - 1) * 3 + 1] = 0; // r
+            image[(i * width + j + face->size.width - 1) * 3] = 0; // r
+            // image[i * width + 3 * (j + face->size.width - 1) + 1] = 0;   // g
+            // image[i * width + 3 * (j + face->size.width - 1)] = 0;       // b
+        }
+    }
+    else
+    {
+        for (i = face->y, j = face->x; j < face->x + face->size.width; j++)
+        {
+            image[i * width + 3 * j + 2] = color_GREY; // r
+            image[i * width + 3 * j + 1] = color_GREY;   // g
+            image[i * width + 3 * j] = color_GREY;       // b
+
+            image[(i + face->size.height - 1) * width + 3 * j + 2] = color_GREY; // r
+            image[(i + face->size.height - 1) * width + 3 * j + 1] = color_GREY;   // g
+            image[(i + face->size.height - 1) * width + 3 * j] = color_GREY;       // b
+        }
+
+        for (i = face->y, j = face->x; i < face->y + face->size.height; i++)
+        {
+            image[i * width + 3 * j + 2] = color_GREY; // r
+            image[i * width + 3 * j + 1] = color_GREY;   // g
+            image[i * width + 3 * j] = color_GREY;       // b
+
+            image[i * width + 3 * (j + face->size.width - 1) + 2] = color_GREY; // r
+            image[i * width + 3 * (j + face->size.width - 1) + 1] = color_GREY;   // g
+            image[i * width + 3 * (j + face->size.width - 1)] = color_GREY;       // b
+        }
+    }
+}
 
 int main(int argc, char const *argv[])
 {
@@ -67,6 +142,16 @@ int main(int argc, char const *argv[])
         exit(1);
     }
 
+    int numbytes = sizeof(pel) * im.h_offset * im.height;
+    pel* grey_image = (pel*) malloc(numbytes);
+    CHECK(cudaMemcpy(grey_image, dev_image, numbytes, cudaMemcpyDeviceToHost));
+
+    // write_new_BMP("grey.bmp", grey_image, im.height, im.width, 24);
+    compare_grey_images(grey_image, original_image);
+
+
+
+
     const char* classifier_file = "../class.txt";
     const char* config_file = "info.txt";
 
@@ -79,7 +164,25 @@ int main(int argc, char const *argv[])
     int minSize = 24;
     int maxSize = 0;
 
-    Rectangle** face = detect_multiple_faces(dev_image, scaleFactor, minSize, maxSize);
+    Rectangle** dev_faces = detect_multiple_faces(dev_image, scaleFactor, minSize, maxSize);
+
+    printf("\nStarting drawing...");
+
+    uint dimGrid, rowBlock, dimBlock = 256;
+    rowBlock = (im.width + dimBlock - 1) / dimBlock;
+    dimGrid = im.height * rowBlock;
+
+    pel* dev_original_image;
+    int nBytes = sizeof(pel) * im.height * (im.bitColor > 8? im.h_offset : im.width);
+    CHECK(cudaMalloc((void**) &dev_original_image, nBytes));
+    CHECK(cudaMemcpy(dev_original_image, original_image, nBytes, cudaMemcpyHostToDevice));
+
+    cuda_draw_rectangles <<< dimGrid, dimBlock >>> (dev_faces, dev_original_image, im.width, im.height, strcmp(im.type, "GREY") != 0);
+
+    CHECK(cudaMemcpy(original_image, dev_original_image, nBytes, cudaMemcpyDeviceToHost));
+
+    write_new_BMP("out.bmp", original_image, im.height, im.width, 24);
+    printf("\n\tface detection completed!\n");
 
     // printf("\nDetected %d faces in image. Starting drawing...", face->size);
     
@@ -98,59 +201,89 @@ int main(int argc, char const *argv[])
     exit(0);
 }
 
-void draw_rectangle(pel** image, Rectangle* face)
+
+
+// void draw_rectangle(pel** image, Rectangle* face)
+// {
+//     int i,j;
+
+//     short color_RGB = 255;
+//     short color_GREY = 150;
+
+//     if (strcmp(im.type, "GREY") != 0)
+//     {
+//         for (i = face->y, j = face->x; j < face->x + face->size.width; j++)
+//         {
+//             image[i][3 * j + 2] = color_RGB; // r
+//             image[i][3 * j + 1] = 0;   // g
+//             image[i][3 * j] = 0;       // b
+
+//             image[i + face->size.height - 1] [3 * j + 2] = color_RGB; // r
+//             image[i + face->size.height - 1] [3 * j + 1] = 0;   // g
+//             image[i + face->size.height - 1] [3 * j] = 0;       // b
+//         }
+
+//         for (i = face->y, j = face->x; i < face->y + face->size.height; i++)
+//         {
+//             image[i][3 * j + 2] = color_RGB; // r
+//             image[i][3 * j + 1] = 0;   // g
+//             image[i][3 * j] = 0;       // b
+
+//             image[i] [3 * (j + face->size.width - 1) + 2] = color_RGB; // r
+//             image[i] [3 * (j + face->size.width - 1) + 1] = 0;   // g
+//             image[i] [3 * (j + face->size.width - 1)] = 0;       // b
+//         }
+//         return;
+//     }
+
+//     for (i = face->y, j = face->x; j < face->x + face->size.width; j++)
+//     {
+//         image[i][3 * j + 2] = color_GREY; // r
+//         image[i][3 * j + 1] = color_GREY;   // g
+//         image[i][3 * j] = color_GREY;       // b
+
+//         image[i + face->size.height - 1] [3 * j + 2] = color_GREY; // r
+//         image[i + face->size.height - 1] [3 * j + 1] = color_GREY;   // g
+//         image[i + face->size.height - 1] [3 * j] = color_GREY;       // b
+//     }
+
+//     for (i = face->y, j = face->x; i < face->y + face->size.height; i++)
+//     {
+//         image[i][3 * j + 2] = color_GREY; // r
+//         image[i][3 * j + 1] = color_GREY;   // g
+//         image[i][3 * j] = color_GREY;       // b
+
+//         image[i] [3 * (j + face->size.width - 1) + 2] = color_GREY; // r
+//         image[i] [3 * (j + face->size.width - 1) + 1] = color_GREY;   // g
+//         image[i] [3 * (j + face->size.width - 1)] = color_GREY;       // b
+//     }
+// }
+
+
+
+
+
+void compare_grey_images(pel* dev_grey, pel* image)
 {
-    int i,j;
+	unsigned int j, k,i;
+	for (j = 0; j < im.height; j ++)
+	{
+		for (i = 0; i < im.width; i++)
+		{
+			k = j * im.h_offset + i * 3;
 
-    short color_RGB = 255;
-    short color_GREY = 150;
+			pel r,g,b, grey_val;
+			r = image[k+2];
+			g = image[k+1];
+			b = image[k];
 
-    if (strcmp(im.type, "GREY") != 0)
-    {
-        for (i = face->y, j = face->x; j < face->x + face->size.width; j++)
-        {
-            image[i][3 * j + 2] = color_RGB; // r
-            image[i][3 * j + 1] = 0;   // g
-            image[i][3 * j] = 0;       // b
+			grey_val = (pel) round(0.3f * r + 0.59f * g + 0.11f * b); // luminance formula
 
-            image[i + face->size.height - 1] [3 * j + 2] = color_RGB; // r
-            image[i + face->size.height - 1] [3 * j + 1] = 0;   // g
-            image[i + face->size.height - 1] [3 * j] = 0;       // b
-        }
-
-        for (i = face->y, j = face->x; i < face->y + face->size.height; i++)
-        {
-            image[i][3 * j + 2] = color_RGB; // r
-            image[i][3 * j + 1] = 0;   // g
-            image[i][3 * j] = 0;       // b
-
-            image[i] [3 * (j + face->size.width - 1) + 2] = color_RGB; // r
-            image[i] [3 * (j + face->size.width - 1) + 1] = 0;   // g
-            image[i] [3 * (j + face->size.width - 1)] = 0;       // b
-        }
-        return;
-    }
-
-    for (i = face->y, j = face->x; j < face->x + face->size.width; j++)
-    {
-        image[i][3 * j + 2] = color_GREY; // r
-        image[i][3 * j + 1] = color_GREY;   // g
-        image[i][3 * j] = color_GREY;       // b
-
-        image[i + face->size.height - 1] [3 * j + 2] = color_GREY; // r
-        image[i + face->size.height - 1] [3 * j + 1] = color_GREY;   // g
-        image[i + face->size.height - 1] [3 * j] = color_GREY;       // b
-    }
-
-    for (i = face->y, j = face->x; i < face->y + face->size.height; i++)
-    {
-        image[i][3 * j + 2] = color_GREY; // r
-        image[i][3 * j + 1] = color_GREY;   // g
-        image[i][3 * j] = color_GREY;       // b
-
-        image[i] [3 * (j + face->size.width - 1) + 2] = color_GREY; // r
-        image[i] [3 * (j + face->size.width - 1) + 1] = color_GREY;   // g
-        image[i] [3 * (j + face->size.width - 1)] = color_GREY;       // b
-    }
+			if (abs(grey_val - dev_grey[k]) > 1)
+            {
+                printf("\nDetected value inconsistency at (%u,%u): cpu_grey = %d, gpu_grey = %d", j,i,grey_val, dev_grey[k]);
+                exit(1);
+            }
+		}
+	}
 }
-

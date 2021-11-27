@@ -220,124 +220,59 @@ bool load_classifier_to_gpu(const char* classifier_path, const char* config_path
     return false;
 }
 
-pel** resize_image(pel** image, Size out_size)
-{
-    float resize_factor = (float) im.height / out_size.height;
-    printf("\nresizing factor: %f | height = %d, width = %d", resize_factor, out_size.height, out_size.width);
-
-    pel** output = (pel**) malloc(sizeof(pel*) * out_size.height);
-    int i;
-    for (i = 0; i < out_size.height; i++)
-        output[i] = (pel*) malloc(sizeof(pel) * out_size.width);
-
-    int j;
-    for (i = 0; i < out_size.height; i++)
-    {
-        for (j = 0; j < out_size.width; j++)
-        {
-            int h = floor(i * resize_factor);
-            int w = floor(j * resize_factor);
-
-            output[i][j] = image[h][w * 3];
-        }
-    }
-    return output;
-}
-
-// bool runClassifier(double** iim, int y, int x, unsigned int variance)
-// {
-//     int stage, i;
-//     unsigned int temp;
-//     long int threshold, filter_sum, stage_sum;
-
-//     for (stage = 0; stage < classifier->n_stages; stage++)
-//     {
-//         Filter** filters = classifier->filters[stage];
-//         stage_sum = 0;
-
-//         for (i = 0; i < classifier->filters_per_stages[stage]; i++)
-//         {
-//             Filter* f = filters[i];
-//             filter_sum = 0;
-            
-//             threshold = (long int) f->threshold * variance;
-
-//             Rectangle* r = &(f->rect1);
-
-//             temp = 0;
-//             temp += iim[y + r->y + r->size.height][x + r->x + r->size.width];
-//             temp += - iim[y + r->y][x + r->x + r->size.width];
-//             temp += - iim[y + r->y + r->size.height][x + r->x];
-//             temp += iim[y + r->y][x + r->x];
-
-//             filter_sum += (long int) temp * f->weight1;
-
-//             r = &(f->rect2);
-            
-//             temp = 0;
-//             temp += iim[y + r->y + r->size.height][x + r->x + r->size.width];
-//             temp += - iim[y + r->y][x + r->x + r->size.width];
-//             temp += - iim[y + r->y + r->size.height][x + r->x];
-//             temp += iim[y + r->y][x + r->x];
-
-//             filter_sum += (long int) temp * f->weight2;
-
-//             r = &(f->rect3);
-
-//             if ( (r->x + r->y + r->size.height + r->size.width) != 0)
-//             {
-//                 temp = 0;
-//                 temp += iim[y + r->y + r->size.height][x + r->x + r->size.width];
-//                 temp += - iim[y + r->y][x + r->x + r->size.width];
-//                 temp += - iim[y + r->y + r->size.height][x + r->x];
-//                 temp += iim[y + r->y][x + r->x];
-
-//                 filter_sum += (long int) temp * f->weight3;
-//             }
-
-//             stage_sum += (long int)(filter_sum < threshold ? f->alpha1 : f->alpha2);
-//         }
-        
-//         if (stage_sum < 0.4f * classifier->stage_thresholds[stage])
-//             return false;
-//     }
-//     // printf("\n face detected in window on (%d,%d)", x, y);
-//     return true;
-// }
-
-__global__ void cuda_evaluate(Classifier* classifier, long unsigned int* iim, long unsigned int* sq_iim, unsigned int width, unsigned int height, int currWinSize, float factor, Rectangle** faces)
+__global__ void cuda_evaluate(Classifier* classifier, double* iim, double* sq_iim, unsigned int width, unsigned int height, int currWinSize, float factor, Rectangle** faces)
 {
     unsigned long id = blockIdx.x * blockDim.x + threadIdx.x;
 
-    if (id >= (height - WINDOW_SIZE) * (width - WINDOW_SIZE))
-        return;
+    // if (id >= (height - WINDOW_SIZE) * (width - WINDOW_SIZE))
+    //     return;
 
-    unsigned int variance, mean, y, x;
+    int y, x;
 
-    y = floor((float) id / width);
+    unsigned int variance, mean;
+
+    y = floor((double) id / width);
     x = id % width;
+
+    if (y >= height - WINDOW_SIZE || x >= width - WINDOW_SIZE)
+        return;
 
     mean = iim[(y + WINDOW_SIZE - 1) * width + x + WINDOW_SIZE - 1];
     variance = sq_iim[(y + WINDOW_SIZE - 1) * width + x + WINDOW_SIZE - 1];
 
+    // if (id == 57587)
+    //     printf("\n (%d,%d), initial mean = %u, initial variance = %u, offset of bottom-right corner = %d", y, x, mean, variance,(y + WINDOW_SIZE - 1) * width + x + WINDOW_SIZE - 1);
+
     if (y > 0)
     {
-        mean -= iim[(y - 1) * width + x];
-        variance -= sq_iim[(y - 1) * width + x];
+        mean -= (unsigned int) iim[(y - 1) * width + x + WINDOW_SIZE - 1];
+        variance -= (unsigned int) sq_iim[(y - 1) * width + x + WINDOW_SIZE - 1];
+        // if (id == 57587)
+        //     printf("\n (%d,%d), offset of top-right corner = %d, iim value = %.1f", y, x, (y - 1) * width + x + WINDOW_SIZE - 1, iim[(y - 1) * width + x + WINDOW_SIZE - 1]);
     }
-    if (y > 0)
+    if (x > 0)
     {
-        mean -= iim[y * width + x - 1];
-        variance -= sq_iim[y * width + x - 1];
+        mean -= (unsigned int) iim[(y + WINDOW_SIZE - 1) * width + x - 1];
+        variance -= (unsigned int) sq_iim[(y + WINDOW_SIZE - 1) * width + x - 1];
+        // if (id == 57587)
+        //     printf("\n (%d,%d), offset of bottom-left corner = %d, iim value = %.1f", y, x, (y + WINDOW_SIZE - 1) * width + x - 1,iim[(y + WINDOW_SIZE - 1) * width + x - 1]);
     }
     if (y > 0 && x > 0)
     {
-        mean += iim[(y - 1) * width + x - 1];
-        variance += sq_iim[(y - 1) * width + x - 1];
+        mean += (unsigned int) iim[(y - 1) * width + x - 1];
+        variance += (unsigned int) sq_iim[(y - 1) * width + x - 1];
+        // if (id == 57587)
+        //     printf("\n (%d,%d), offset of top-left corner = %d, iim value = %.1f", y, x, (y - 1) * width + x - 1, iim[(y - 1) * width + x - 1]);
     }
 
-    variance = (variance * (WINDOW_SIZE * WINDOW_SIZE)) - mean * mean;
-    variance = variance > 0 ? sqrt((double) variance) : 1;
+    // if (id == 57587)
+    //     printf("\n (%d,%d), final mean = %u, final variance = %u", y, x, mean, variance);
+
+    long tmp = (variance * (WINDOW_SIZE * WINDOW_SIZE)) - mean * mean;
+    variance = tmp > 0 ? (unsigned int) sqrt((double) tmp) : 1;
+
+    // if (id == 0)
+    //     printf("\n\tvariance = %f", variance);
 
     // RUNNING CLASSIFIER
 
@@ -345,6 +280,7 @@ __global__ void cuda_evaluate(Classifier* classifier, long unsigned int* iim, lo
     unsigned int temp;
     long int threshold, filter_sum, stage_sum;
     Filter* f = classifier->filters;
+    Rectangle* r;
 
     for (stage = 0; stage < classifier->n_stages; stage++)
     {
@@ -353,27 +289,68 @@ __global__ void cuda_evaluate(Classifier* classifier, long unsigned int* iim, lo
 
         for (i = 0; i < classifier->filters_per_stages[stage]; i++)
         {
+
+
+
+            // if (id == 57587 && (i ==0 || stage == 3))
+            // {
+            //     printf("\n\n\t\t- printing filter n. %d from stage %d... -", i+1, stage + 1);
+
+            //     r = &(f->rect1);
+
+            //     printf("\n\t\t\trectangle 1: { x = %hu, y = %hu, size.width = %u, size.height = %u }", r->x, r->y, r->size.width, r->size.height);
+            //     printf("\n\t\t\tweight1 = %d", f->weight1);
+
+            //     r = &(f->rect2);
+            //     printf("\n\t\t\trectangle 2: { x = %hu, y = %hu, size.width = %u, size.height = %u }", r->x, r->y, r->size.width, r->size.height);
+            //     printf("\n\t\t\tweight2 = %d", f->weight2);
+
+            //     r = &(f->rect3);
+            //     printf("\n\t\t\trectangle 3: { x = %hu, y = %hu, size.width = %u, size.height = %u }", r->x, r->y, r->size.width, r->size.height);
+            //     printf("\n\t\t\tweight3 = %d", f->weight3);
+
+            //     printf("\n\t\t\tthreshold = %d", f->threshold);
+            //     printf("\n\t\t\talpha1 = %d", f->alpha1);
+            //     printf("\n\t\t\talpha2 = %d", f->alpha2);
+            // }
+
+
+
+
             filter_sum = 0;
 
             threshold = (long int) f->threshold * variance;
 
-            Rectangle* r = &(f->rect1);
+            r = &(f->rect1);
+
+            double a,b,c,d;
 
             temp = 0;
-            temp += iim[(y + r->y + r->size.height) * width + (x + r->x + r->size.height)];
-            temp += - iim[(y + r->y) * width + (x + r->x + r->size.width)];
-            temp += - iim[(y + r->y + r->size.height) * width + (x + r->x)];
-            temp += iim[(y + r->y) * width + (x + r->x)];
+            a = iim[(y + r->y + r->size.height) * width + (x + r->x + r->size.width)];
+            b = - iim[(y + r->y) * width + (x + r->x + r->size.width)];
+            c = - iim[(y + r->y + r->size.height) * width + (x + r->x)];
+            d = iim[(y + r->y) * width + (x + r->x)];
+
+            temp = a + b + c + d;
+
+            // if (id == 57587 && (i ==0 || stage == 3))
+            //     printf("\n\trect1: a = %.1f, b = %.1f, c = %.1f, d = %.1f, temp = %u", a,b,c,d,temp);
 
             filter_sum += (long int) temp * f->weight1;
+            long int rect1_val = filter_sum;
 
             r = &(f->rect2);
 
             temp = 0;
-            temp += iim[(y + r->y + r->size.height) * width + (x + r->x + r->size.height)];
-            temp += - iim[(y + r->y) * width + (x + r->x + r->size.width)];
-            temp += - iim[(y + r->y + r->size.height) * width + (x + r->x)];
-            temp += iim[(y + r->y) * width + (x + r->x)];
+            a = iim[(y + r->y + r->size.height) * width + (x + r->x + r->size.width)];
+            b = - iim[(y + r->y) * width + (x + r->x + r->size.width)];
+            c = - iim[(y + r->y + r->size.height) * width + (x + r->x)];
+            d = iim[(y + r->y) * width + (x + r->x)];
+
+            temp = a + b + c + d;
+
+            // if (id == 57587 && (i ==0 || stage == 3))
+            //     printf("\n\trect2: a = %.1f, b = %.1f, c = %.1f, d = %.1f, temp = %u", a,b,c,d,temp);
 
             filter_sum += (long int) temp * f->weight2;
 
@@ -382,158 +359,199 @@ __global__ void cuda_evaluate(Classifier* classifier, long unsigned int* iim, lo
             if ( (r->x + r->y + r->size.height + r->size.width) != 0)
             {
                 temp = 0;
-                temp += iim[(y + r->y + r->size.height) * width + (x + r->x + r->size.height)];
-                temp += - iim[(y + r->y) * width + (x + r->x + r->size.width)];
-                temp += - iim[(y + r->y + r->size.height) * width + (x + r->x)];
-                temp += iim[(y + r->y) * width + (x + r->x)];
+                a = iim[(y + r->y + r->size.height) * width + (x + r->x + r->size.width)];
+                b = - iim[(y + r->y) * width + (x + r->x + r->size.width)];
+                c = - iim[(y + r->y + r->size.height) * width + (x + r->x)];
+                d = iim[(y + r->y) * width + (x + r->x)];
+
+                temp = a + b + c + d;
 
                 filter_sum += (long int) temp * f->weight3;
             }
 
-            stage_sum += (long int) (filter_sum < threshold ? f->alpha1 : f->alpha2);
+            stage_sum += (long int)(filter_sum < threshold ? f->alpha1 : f->alpha2);
+
+            // if (id == 57587 && (i ==0 || stage == 3))
+            //     printf("\n\tfilter_sum = %ld, threshold = %ld, f->threshold = %d, variance = %u, temp(rect2) = %u, temp(rect1) * weight1 = %ld", filter_sum, threshold, f->threshold, variance, temp, rect1_val);
 
             f++;
         }
 
+        // if (id == 57587)
+        //     printf("\n\tstage_sum = %ld, 0.4f * stage_threshold = %f", stage_sum, 0.4f * classifier->stage_thresholds[stage]);
+
+        // if (stage > 10)
+        //     printf("\n p(%d,%d): currently at stage %d with stage threshold = %d and stage_sum = %ld", y, x, stage, classifier->stage_thresholds[stage], stage_sum);
+
         if (stage_sum < 0.4f * classifier->stage_thresholds[stage])
+        {
             return;
+        }    
     }
 
     Rectangle* face = (Rectangle*) malloc(sizeof(Rectangle));
-    face->x = x * factor;
-    face->y = y * factor;
+    face->x = floor(x * factor);
+    face->y = floor(y * factor);
     face->size.height = currWinSize;
     face->size.width = currWinSize;
 
     faces[id] = face;
-    printf("\ndetected face at (%u, %u).", x,y);
+    printf("\ndetected face at (%u, %u).", face->y,face->x);
 }
 
-// void evaluate(long unsigned int* iim, long unsigned int* sq_iim, Size size, int currWinSize, float factor, Rectangle** faces)
-// {
-//     int i, j;
-//     unsigned int variance, mean;
-
-//     for (i = 0; i < size.height - WINDOW_SIZE; i++)
-//     {
-//         for (j = 0; j < size.width - WINDOW_SIZE; j++)
-//         {
-//             /// VARIANCE COMPUTATION
-
-//             mean = iim[i + WINDOW_SIZE - 1][j + WINDOW_SIZE - 1];
-//             variance = sq_iim[i + WINDOW_SIZE - 1][j + WINDOW_SIZE - 1];
-
-//             if (i > 0)
-//             {
-//                 mean -= iim[i-1][j];
-//                 variance -= sq_iim[i-1][j];
-//             }
-//             if (j > 0)
-//             {
-//                 mean -= iim[i][j-1];
-//                 variance -= sq_iim[i][j-1];
-//             }
-//             if (i > 0 && j > 0)
-//             {
-//                 mean += iim[i-1][j-1];
-//                 variance += sq_iim[i-1][j-1];
-//             }
-
-//             variance = (variance * (WINDOW_SIZE * WINDOW_SIZE)) - mean * mean;
-//             variance = variance > 0 ? sqrt(variance) : 1;
-
-//             // FILTERS EVALUATION
-
-//             // if (runClassifier(iim, i, j, variance))
-//             // {
-//             //     Rectangle* face = (Rectangle *) malloc(sizeof(Rectangle));
-//             //     face->x = j * factor;
-//             //     face->y = i * factor;
-//             //     face->size.height = currWinSize;
-//             //     face->size.width = currWinSize;
-
-//             //     add(faces, face);
-//             // }
-//         }
-//     }
-// }
-
-__global__ void cuda_integral_image_24bit(pel* image, unsigned int width, unsigned int height, long unsigned int* iim, long unsigned int* squared_iim)
+__global__ void cuda_integral_image_row(pel* image, unsigned int width, unsigned int height, unsigned int original_width, double* iim, double* squared_iim, float factor, short bitColor)
 {
     unsigned long id = blockIdx.x * blockDim.x + threadIdx.x;
 
-    long unsigned int sum = 0, sq_sum = 0, offset;
+    unsigned long offset, scaled_offset;
 
-    uint t;
+    double sum = 0, sq_sum = 0;
+
+    pel t;
+
+    int i;
+
+    // int h,w;
+
+    if (id < height)
+    {
+        for (i = 0; i < width; i++)
+        {
+            int h = floor(id * factor);
+            int w = floor(i * factor);
+
+            scaled_offset = h * original_width + w;
+            offset = id * width + i;
+            t = image[scaled_offset * (bitColor > 8 ? 3 : 1)];
+            // resized_img[offset] = t;
+            sum += (double) t;
+            sq_sum += (double) (t * t);
+            // printf("\nsum = %f, sq_sum = %f", sum, sq_sum);
+
+            iim[offset] = sum;
+            squared_iim[offset] = sq_sum;
+            // printf("\n(%lu,%d), sum = %f, sq_sum = %f", id, i, iim[offset], squared_iim[offset]);
+        }
+    }
+}
+
+__global__ void cuda_integral_image_col(unsigned int width, unsigned int height, double* iim, double* squared_iim)
+{
+    unsigned long id = blockIdx.x * blockDim.x + threadIdx.x;
 
     int i;
 
     if (id < width)
     {
-        for (i = 0; i < height; i++)
+        for (i = 1; i < height; i++)
         {
-            offset = i * width + id;
-            t = image[offset * 3];
-            sum += t;
-            sq_sum += t * t;
-
-            atomicAdd(iim + offset, sum);
-            atomicAdd(squared_iim + offset, sq_sum);
+            iim[i * width + id] += iim[(i - 1) * width + id];
+            squared_iim[i * width + id] += squared_iim[(i - 1) * width + id];
         }
     }
-    else if (id < width + height)
-    {
-        for (i = 0; i < width; i++)
-        {
-            offset = (id - width) * width + i;
-            t = image[offset * 3];
-            sum += t;
-            sq_sum += t * t;
-
-            atomicAdd(iim + offset, sum);
-            atomicAdd(squared_iim + offset, sq_sum);
-        }
-    }
-
 }
 
-__global__ void cuda_integral_image(pel* image, unsigned int width, unsigned int height, long unsigned int* iim, long unsigned int* squared_iim)
+void compare_integral_image(pel* image, Size size, double* dev_iim, double* dev_squared_iim, float factor, short bitColor)
 {
-    unsigned long id = blockIdx.x * blockDim.x + threadIdx.x;
-
-    long unsigned int sum = 0, sq_sum = 0, offset;
-
-    uint t;
-
-    int i;
-
-    if (id < width)
+    double** iim = (double**) malloc(size.height * sizeof(double*));
+    double** squared_iim = (double**) malloc(size.height * sizeof(double*));
+    unsigned int i;
+    for (i = 0; i < size.height; i++)
     {
-        for (i = 0; i < height; i++)
-        {
-            offset = i * width + id;
-            t = image[offset];
-            sum += t;
-            sq_sum += t * t;
-
-            atomicAdd(iim + offset, sum);
-            atomicAdd(squared_iim + offset, sq_sum);
-        }
-    }
-    else if (id < width + height)
-    {
-        for (i = 0; i < width; i++)
-        {
-            offset = (id - width) * width + i;
-            t = image[offset];
-            sum += t;
-            sq_sum += t * t;
-
-            atomicAdd(iim + offset, sum);
-            atomicAdd(squared_iim + offset, sq_sum);
-        }
+        iim[i] = (double *) malloc(size.width * sizeof(double));
+        squared_iim[i] = (double *) malloc(size.width * sizeof(double));
     }
 
+    iim[0][0] = image[0];
+    squared_iim[0][0] = (double) image[0] * image[0]; 
+
+    unsigned int j, scaled_offset;
+    bool error = false;
+    for (i = 0; i < size.height; i++)
+    {
+        for (j = 0; j < size.width; j++)
+        {
+            scaled_offset = floor(i * factor) * im.width + floor(j * factor);
+            pel t = image[scaled_offset * (bitColor > 8 ? 3 : 1)];
+
+            if (i > 0 && j > 0)
+            {
+                iim[i][j] = iim[i-1][j] + iim[i][j-1] - iim[i-1][j-1] + t;
+                squared_iim[i][j] = squared_iim[i-1][j] + squared_iim[i][j-1] - squared_iim[i-1][j-1] + (double)(t * t);
+            }
+            else if (i > 0)
+            {
+                iim[i][0] = iim[i-1][0] + t;
+                squared_iim[i][0] = squared_iim[i-1][0] + (double)(t * t);
+            }
+            else if (j > 0)
+            {
+                iim[0][j] = iim[0][j-1] + t;
+                squared_iim[0][j] = squared_iim[0][j-1] + (double)(t * t);
+            }
+
+            if (iim[i][j] != dev_iim[i * size.width + j])
+            {
+                printf("\n\tDetected value inconsistency at (%u,%u): cpu iim = %f | gpu iim = %f", i, j, iim[i][j], dev_iim[i * size.width + j]);
+
+                FILE* f = fopen("log.txt", "w");
+                
+                int k,z, offset;
+                fprintf(f,"\nprinting submatrix of image: \n\n");
+                for (k = 0; k < i + 1; k++)
+                {
+                    for (z = 0; z < j + 1; z++)
+                    {
+                        offset = floor(k * factor) * im.width + floor(z * factor);
+                        fprintf(f,"  %u", image[offset * (bitColor > 8 ? 3 : 1)]);
+                    }
+                    fprintf(f, "\n");
+                }
+                fprintf(f,"\n offset = %d", offset);
+                fprintf(f,"\nprinting submatrix of iim: \n\n");
+                for (k = 0; k < i + 1; k++)
+                {
+                    for (z = 0; z < j + 1; z++)
+                        fprintf(f,"  %.0f", iim[k][z]);
+                    fprintf(f,"\n");
+                }
+
+                fprintf(f,"\nprinting submatrix of dev_iim: \n\n");
+                for (k = 0; k < i + 1; k++)
+                {
+                    for (z = 0; z < j + 1; z++)
+                        fprintf(f,"  %.0f", dev_iim[k * size.width + z]);
+                    fprintf(f,"\n");
+                }
+                fclose(f);
+                error = true;
+            }
+            if (squared_iim[i][j] != dev_squared_iim[i * size.width + j])
+            {
+                printf("\n\tDetected value inconsistency at (%u,%u): cpu squared_iim = %f | gpu squared_iim = %f", i, j, squared_iim[i][j], dev_squared_iim[i * size.width + j]);
+                error = true;
+            }
+
+            if (error)
+                exit(0);
+        }
+    }
+    printf("\nthe two integral images are equal.");
+}
+
+void cuda_integral_image(pel* image, unsigned int width, unsigned int height, unsigned int original_width, double* iim, double* sq_iim, float factor, short bitColor)
+{
+    uint dimBlock = 256, dimGrid;
+
+    dimGrid = ceil((float) height / dimBlock);
+
+    // printf("\ndimblock = %u, dimgrid = %u | width = %u, height = %u", dimBlock, dimGrid, image_size.width, image_size.height);
+
+    cuda_integral_image_row <<< dimGrid, dimBlock >>>(image, width, height, original_width, iim, sq_iim, factor, bitColor);
+
+    dimGrid = ceil((float) width / dimBlock);
+
+    cuda_integral_image_col <<<dimGrid, dimBlock >>>(width, height, iim, sq_iim);
 }
 
 Rectangle** detect_multiple_faces(pel* image, float scaleFactor, int minWindow, int maxWindow)
@@ -543,36 +561,73 @@ Rectangle** detect_multiple_faces(pel* image, float scaleFactor, int minWindow, 
 
     Rectangle** faces;
     CHECK(cudaMalloc((void **) &faces, sizeof(Rectangle*) * im.width * im.height));
+    CHECK(cudaMemset(faces, 0, sizeof(Rectangle*) * im.width * im.height));
 
-    if ( minWindow <= WINDOW_SIZE )
+    uint dimBlock = 256, dimGrid, rowBlock;
+    unsigned long nBytes;
+    double* iim, *squared_iim;
+
+    if ( maxWindow < WINDOW_SIZE )
+        maxWindow = min(im.width, im.height);
+    
+    printf("\nmaxWindow = %d", maxWindow);
+
+    // pel* grey_image = (pel*) malloc(sizeof(pel) * im.height * im.h_offset);
+    // CHECK(cudaMemcpy(grey_image, image, sizeof(pel) * im.height * im.h_offset, cudaMemcpyDeviceToHost));
+
+    float currFactor;
+    int iteration = 0;
+    printf("\ncreating image pyramid...");
+    for (currFactor = 1; ; currFactor*= scaleFactor, iteration++)
     {
-        Size image_size = { im.width, im.height };
 
-        unsigned long nBytes = sizeof(long unsigned int) * image_size.width * image_size.height;
+        Size temp_size = { round(im.width / currFactor), round(im.height / currFactor) };
 
-        long unsigned int* iim, *squared_iim;
+        int curr_winSize = round(WINDOW_SIZE * currFactor);
+
+        if (minWindow > curr_winSize)
+            continue;
+
+        if (maxWindow < curr_winSize)
+            break;
+
+        printf("\niteration n: %d | resizing factor: %f | height = %u, width = %u", iteration, currFactor, temp_size.height, temp_size.width);
+
+        nBytes = sizeof(double) * temp_size.width * temp_size.height;
+        
         CHECK(cudaMalloc((void **) &iim, nBytes));
         CHECK(cudaMalloc((void **) &squared_iim, nBytes));
 
-        CHECK(cudaMemset(iim, 0, nBytes));
+        // pel* dev_resized_img, *resized_img;
+        // CHECK(cudaMalloc((void **) &dev_resized_img, sizeof(pel) * temp_size.width * temp_size.height));
 
-        uint dimBlock = 256, dimGrid;
-        dimGrid = ceil((float) (image_size.width + image_size.height) / dimBlock);
+        cuda_integral_image(image, temp_size.width, temp_size.height, im.width, iim, squared_iim, currFactor, im.bitColor);
 
-        if (im.bitColor > 8)
-        {
-            printf("\ndimblock = %u, dimgrid = %u | width = %u, height = %u", dimBlock, dimGrid, image_size.width, image_size.height);
-            cuda_integral_image_24bit <<< dimGrid, dimBlock >>> (image, image_size.width, image_size.height, iim, squared_iim);
-            // cudaDeviceSynchronize();
-            printf("\nintegral image 24bit created");         
-        }
-        else
-            cuda_integral_image <<< dimGrid, dimBlock >>> (image, image_size.width, image_size.height, iim, squared_iim);
+        // resized_img = (pel*) malloc(sizeof(pel) * temp_size.width * temp_size.height);
+        // CHECK(cudaMemcpy(resized_img, dev_resized_img, sizeof(pel) * temp_size.height * temp_size.width, cudaMemcpyDeviceToHost));
+        // char file_name[19];
+        // snprintf(file_name, 19, "resized/img_%d.bmp", iteration);
+        // write_new_BMP(file_name, resized_img, temp_size.height, temp_size.width, 8);
+        // free(resized_img);
+        // CHECK(cudaFree(dev_resized_img));
+
         
-        int rowBlock = (image_size.width + dimBlock - 1) / dimBlock;
-        dimGrid = image_size.height * rowBlock;
+        // double* dev_iim = (double* )malloc(nBytes);
+        // double* dev_squared_iim = (double*) malloc(nBytes);
+        // CHECK(cudaMemcpy(dev_iim, iim, nBytes, cudaMemcpyDeviceToHost));
+        // CHECK(cudaMemcpy(dev_squared_iim, squared_iim, nBytes, cudaMemcpyDeviceToHost));
 
-        cuda_evaluate <<< dimGrid, dimBlock >>>(classifier, iim, squared_iim, image_size.width, image_size.height, WINDOW_SIZE, 1, faces);
+        // compare_integral_image(grey_image, temp_size, dev_iim, dev_squared_iim, currFactor, im.bitColor);
+
+        // free(dev_iim);
+        // free(dev_squared_iim);
+        
+
+        rowBlock = ((temp_size.width ) + dimBlock - 1) / dimBlock;
+        dimGrid = (temp_size.height ) * rowBlock;
+
+        cudaDeviceSynchronize();
+        cuda_evaluate <<< dimGrid, dimBlock >>>(classifier, iim, squared_iim, temp_size.width, temp_size.height, curr_winSize, currFactor, faces);
 
         cudaDeviceSynchronize();
         // print_classifier<<<1,1>>>(classifier);
@@ -580,100 +635,10 @@ Rectangle** detect_multiple_faces(pel* image, float scaleFactor, int minWindow, 
 
         CHECK(cudaFree(iim));
         CHECK(cudaFree(squared_iim));
-        printf("\niims deleted and memory free");
 
-        // exit(0);
+        // TODO GROUP RECTANGLES
     }
-
-    // if ( maxWindow < WINDOW_SIZE )
-    //     maxWindow = min(im.width, im.height);
-    
-    // printf("\nmaxWindow = %d", maxWindow);
-
-    // float currFactor;
-    // int iteration = 1;
-    // printf("\ncreating image pyramid...");
-    // for (currFactor = scaleFactor; ; currFactor*= scaleFactor, iteration++)
-    // {
-    //     Size temp_size = { round(im.width / currFactor), round(im.height / currFactor) };
-
-    //     int curr_winSize = round(WINDOW_SIZE * currFactor);
-
-    //     if (minWindow > curr_winSize)
-    //         continue;
-
-    //     if (maxWindow < curr_winSize)
-    //         break;
-
-    //     char file_name[19];
-    //     snprintf(file_name, 19, "resized/img_%d.bmp", iteration);
-
-    //     pel** res_im = resize_image(image, temp_size);
-        
-    //     // write_new_BMP(file_name, res_im, temp_size.height, temp_size.width, 8);
-
-    //     double** iim, **squared_iim;
-
-    //     integral_image(res_im, temp_size, &iim, &squared_iim);
-
-    //     evaluate(iim, squared_iim, temp_size, curr_winSize, currFactor, faces);
-
-    //     free_image(res_im, temp_size);
-    //     free_integral_image(iim, temp_size);
-    //     free_integral_image(squared_iim, temp_size);
-
-    //     // TODO GROUP RECTANGLES
-    // }
+    printf("\ncompleted");
+    CHECK(cudaFree(image));
     return faces;
-}
-
-List* listInit()
-{
-    List* list = (List *) malloc(sizeof(List));
-    list->head = NULL;
-    list->size = 0;
-
-    return list;
-}
-
-void add(List* list, Rectangle* r)
-{
-    if (list)
-    {
-        Node* node = (Node*) malloc(sizeof(Node));
-        node->elem = r;
-        node->next = NULL;
-
-    if (list->size == 0)
-        {
-            list->head = node;
-            list->size++;
-            return;
-        }
-
-        node->next = list->head;
-        list->head = node;
-        list->size++;
-        return;
-    }
-    printf("\n Error: received null list parameter.");
-}
-
-Rectangle* remove_from_head(List* list)
-{
-    if (list)
-    {
-        if (list->size > 0)
-        {
-            Node* old = list->head;
-            Rectangle* r = old->elem;
-            // free(old);
-            list->head = list->head->next;
-            list->size--;
-            return r;
-        }
-        printf("\n Error: trying to remove element with empty list.");
-    }
-    printf("\n Error: received null list parameter.");
-    return NULL;
 }
