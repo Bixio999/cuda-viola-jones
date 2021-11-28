@@ -9,12 +9,10 @@
 
 #define min(a,b) (a < b? a : b)
 #define max(a,b) (a > b? a : b)
-#define atomicAdd(a,b) atomicAdd((int*) a, (int) b)
+// #define atomicAdd(a,b) atomicAdd((int*) a, (int) b)
 
 #include "classifier.h"
 #include "utils/common.h"
-
-#define WINDOW_SIZE 24
 
 typedef struct filter{
     Rectangle rect1;
@@ -220,7 +218,7 @@ bool load_classifier_to_gpu(const char* classifier_path, const char* config_path
     return false;
 }
 
-__global__ void cuda_evaluate(Classifier* classifier, double* iim, double* sq_iim, unsigned int width, unsigned int height, int currWinSize, float factor, Rectangle** faces)
+__global__ void cuda_evaluate(Classifier* classifier, double* iim, double* sq_iim, unsigned int width, unsigned int height, int currWinSize, float factor, Rectangle** faces, unsigned int* face_counter)
 {
     unsigned long id = blockIdx.x * blockDim.x + threadIdx.x;
 
@@ -231,8 +229,8 @@ __global__ void cuda_evaluate(Classifier* classifier, double* iim, double* sq_ii
 
     unsigned int variance, mean;
 
-    y = floor((double) id / width);
-    x = id % width;
+    y = floor((double) id / (width - WINDOW_SIZE));
+    x = id % (width - WINDOW_SIZE); 
 
     if (y >= height - WINDOW_SIZE || x >= width - WINDOW_SIZE)
         return;
@@ -396,7 +394,9 @@ __global__ void cuda_evaluate(Classifier* classifier, double* iim, double* sq_ii
     face->size.width = currWinSize;
 
     faces[id] = face;
-    printf("\ndetected face at (%u, %u).", face->y,face->x);
+
+    atomicAdd(face_counter, 1);
+    // printf("\ndetected face at (%u, %u).", face->y,face->x);
 }
 
 __global__ void cuda_integral_image_row(pel* image, unsigned int width, unsigned int height, unsigned int original_width, double* iim, double* squared_iim, float factor, short bitColor)
@@ -554,7 +554,7 @@ void cuda_integral_image(pel* image, unsigned int width, unsigned int height, un
     cuda_integral_image_col <<<dimGrid, dimBlock >>>(width, height, iim, sq_iim);
 }
 
-Rectangle** detect_multiple_faces(pel* image, float scaleFactor, int minWindow, int maxWindow)
+Rectangle** detect_multiple_faces(pel* image, float scaleFactor, int minWindow, int maxWindow, unsigned int* dev_face_counter)
 {
     if (image == NULL)
         return NULL;
@@ -623,11 +623,11 @@ Rectangle** detect_multiple_faces(pel* image, float scaleFactor, int minWindow, 
         // free(dev_squared_iim);
         
 
-        rowBlock = ((temp_size.width ) + dimBlock - 1) / dimBlock;
-        dimGrid = (temp_size.height ) * rowBlock;
+        rowBlock = ((temp_size.width - WINDOW_SIZE) + dimBlock - 1) / dimBlock;
+        dimGrid = (temp_size.height - WINDOW_SIZE) * rowBlock;
 
         cudaDeviceSynchronize();
-        cuda_evaluate <<< dimGrid, dimBlock >>>(classifier, iim, squared_iim, temp_size.width, temp_size.height, curr_winSize, currFactor, faces);
+        cuda_evaluate <<< dimGrid, dimBlock >>>(classifier, iim, squared_iim, temp_size.width, temp_size.height, curr_winSize, currFactor, faces, dev_face_counter);
 
         cudaDeviceSynchronize();
         // print_classifier<<<1,1>>>(classifier);

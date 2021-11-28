@@ -142,46 +142,54 @@ int main(int argc, char const *argv[])
         exit(1);
     }
 
-    int numbytes = sizeof(pel) * im.h_offset * im.height;
-    pel* grey_image = (pel*) malloc(numbytes);
-    CHECK(cudaMemcpy(grey_image, dev_image, numbytes, cudaMemcpyDeviceToHost));
+    // int numbytes = sizeof(pel) * im.h_offset * im.height;
+    // pel* grey_image = (pel*) malloc(numbytes);
+    // CHECK(cudaMemcpy(grey_image, dev_image, numbytes, cudaMemcpyDeviceToHost));
 
-    // write_new_BMP("grey.bmp", grey_image, im.height, im.width, 24);
-    compare_grey_images(grey_image, original_image);
-
-
-
+    // // write_new_BMP("grey.bmp", grey_image, im.height, im.width, 24);
+    // compare_grey_images(grey_image, original_image);
 
     const char* classifier_file = "../class.txt";
     const char* config_file = "info.txt";
 
     if (load_classifier_to_gpu(classifier_file, config_file))
         printf("\nclassifier correctly loaded.");
-    
-    
 
     float scaleFactor = 1.2f;
     int minSize = 24;
     int maxSize = 0;
 
-    Rectangle** dev_faces = detect_multiple_faces(dev_image, scaleFactor, minSize, maxSize);
+    unsigned int* dev_face_counter;
+    CHECK(cudaMalloc((void **) &dev_face_counter, sizeof(unsigned int)));
+    CHECK(cudaMemset(dev_face_counter, 0, sizeof(unsigned int)));
 
-    printf("\nStarting drawing...");
+    Rectangle** dev_faces = detect_multiple_faces(dev_image, scaleFactor, minSize, maxSize, dev_face_counter);
 
-    uint dimGrid, rowBlock, dimBlock = 256;
-    rowBlock = (im.width + dimBlock - 1) / dimBlock;
-    dimGrid = im.height * rowBlock;
+    unsigned int* face_counter = (unsigned int*) malloc(sizeof(unsigned int));
+    CHECK(cudaMemcpy(face_counter, dev_face_counter, sizeof(unsigned int), cudaMemcpyDeviceToHost));
 
-    pel* dev_original_image;
-    int nBytes = sizeof(pel) * im.height * (im.bitColor > 8? im.h_offset : im.width);
-    CHECK(cudaMalloc((void**) &dev_original_image, nBytes));
-    CHECK(cudaMemcpy(dev_original_image, original_image, nBytes, cudaMemcpyHostToDevice));
+    if (*face_counter > 0)
+    {
+        printf("\nDetected %u faces, starting drawing...", *face_counter);
 
-    cuda_draw_rectangles <<< dimGrid, dimBlock >>> (dev_faces, dev_original_image, im.width, im.height, strcmp(im.type, "GREY") != 0);
+        uint dimGrid, rowBlock, dimBlock = 256;
+        rowBlock = (im.width + dimBlock - 1) / dimBlock;
+        dimGrid = im.height * rowBlock;
 
-    CHECK(cudaMemcpy(original_image, dev_original_image, nBytes, cudaMemcpyDeviceToHost));
+        pel* dev_original_image;
+        int nBytes = sizeof(pel) * im.height * (im.bitColor > 8? im.h_offset : im.width);
+        CHECK(cudaMalloc((void**) &dev_original_image, nBytes));
+        CHECK(cudaMemcpy(dev_original_image, original_image, nBytes, cudaMemcpyHostToDevice));
 
-    write_new_BMP("out.bmp", original_image, im.height, im.width, 24);
+        cuda_draw_rectangles <<< dimGrid, dimBlock >>> (dev_faces, dev_original_image, im.width, im.height, strcmp(im.type, "GREY") != 0);
+
+        CHECK(cudaMemcpy(original_image, dev_original_image, nBytes, cudaMemcpyDeviceToHost));
+
+        write_new_BMP("out.bmp", original_image, im.height, im.width, 24);
+    }
+    else
+        printf("\nNo faces detected in given image.");
+
     printf("\n\tface detection completed!\n");
 
     // printf("\nDetected %d faces in image. Starting drawing...", face->size);

@@ -2,8 +2,7 @@
 
 #include "image.h"
 
-#define WINDOW_WIDTH 24
-#define WINDOW_HEIGHT 24
+#define WINDOW_SIZE 24
 
 typedef struct size {
     unsigned int width;
@@ -18,5 +17,5 @@ typedef struct rect
 } Rectangle;
 
 bool load_classifier_to_gpu(const char* classifier_path, const char* config_path);
-Rectangle** detect_multiple_faces(pel* image, float scaleFactor, int minWindow, int maxWindow);
+Rectangle** detect_multiple_faces(pel* image, float scaleFactor, int minWindow, int maxWindow, unsigned int* dev_face_counter);
 
