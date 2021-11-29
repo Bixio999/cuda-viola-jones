@@ -4,6 +4,7 @@
 #include <ctype.h>
 #include <math.h>
 #include <stdbool.h>
+#include <sys/time.h>
 
 #include "image.h"
 #include "classifier.h"
@@ -12,6 +13,13 @@ struct Image im;
 
 double** integral_image(pel** image);
 void draw_rectangle(pel** image, Rectangle* face);
+
+double seconds() {
+    struct timeval tp;
+    struct timezone tzp;
+    int i = gettimeofday(&tp, &tzp);
+    return ((double)tp.tv_sec + (double)tp.tv_usec * 1.e-6);
+}
 
 int main(int argc, char const *argv[])
 {
@@ -74,7 +82,12 @@ int main(int argc, char const *argv[])
     int minSize = 24;
     int maxSize = 0;
 
+    double initialTime = seconds();
+
     List* face = detect_multiple_faces(image, scaleFactor, minSize, maxSize);
+
+    double elapsedTime = seconds() - initialTime;
+    printf("\nElapsed time: %f seconds", elapsedTime);
 
     printf("\nDetected %d faces in image. Starting drawing...", face->size);
     

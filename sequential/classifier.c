@@ -426,12 +426,12 @@ List* detect_multiple_faces(pel** image, float scaleFactor, int minWindow, int m
         if (maxWindow < curr_winSize)
             break;
 
-        char file_name[19];
-        snprintf(file_name, 19, "resized/img_%d.bmp", iteration);
+        // char file_name[19];
+        // snprintf(file_name, 19, "resized/img_%d.bmp", iteration);
 
         pel** res_im = resize_image(image, temp_size, currFactor);
         
-        write_new_BMP(file_name, res_im, temp_size.height, temp_size.width, 8);
+        // write_new_BMP(file_name, res_im, temp_size.height, temp_size.width, 8);
 
         double** iim, **squared_iim;
 
