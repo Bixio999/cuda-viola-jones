@@ -541,15 +541,19 @@ void compare_integral_image(pel* image, Size size, double* dev_iim, double* dev_
 
 void cuda_integral_image(pel* image, unsigned int width, unsigned int height, unsigned int original_width, double* iim, double* sq_iim, float factor, short bitColor)
 {
-    uint dimBlock = 256, dimGrid;
+    uint dimBlock, dimGrid;
 
-    dimGrid = ceil((float) height / dimBlock);
+    // dimGrid = ceil((float) height / dimBlock);
+    compute_grid_dimension(height, &dimBlock, &dimGrid);
 
-    // printf("\ndimblock = %u, dimgrid = %u | width = %u, height = %u", dimBlock, dimGrid, image_size.width, image_size.height);
+    printf("\n\tiim row - dimblock = %u, dimgrid = %u | width = %u, height = %u", dimBlock, dimGrid, width, height);
 
     cuda_integral_image_row <<< dimGrid, dimBlock >>>(image, width, height, original_width, iim, sq_iim, factor, bitColor);
 
-    dimGrid = ceil((float) width / dimBlock);
+    // dimGrid = ceil((float) width / dimBlock);
+    compute_grid_dimension(width, &dimBlock, &dimGrid);
+
+    printf("\n\tiim cols - dimblock = %u, dimgrid = %u | width = %u, height = %u", dimBlock, dimGrid, width, height);
 
     cuda_integral_image_col <<<dimGrid, dimBlock >>>(width, height, iim, sq_iim);
 }
@@ -563,7 +567,7 @@ Rectangle** detect_multiple_faces(pel* image, float scaleFactor, int minWindow, 
     CHECK(cudaMalloc((void **) &faces, sizeof(Rectangle*) * im.width * im.height));
     CHECK(cudaMemset(faces, 0, sizeof(Rectangle*) * im.width * im.height));
 
-    uint dimBlock = 256, dimGrid, rowBlock;
+    uint dimBlock, dimGrid;
     unsigned long nBytes;
     double* iim, *squared_iim;
 
@@ -622,9 +626,7 @@ Rectangle** detect_multiple_faces(pel* image, float scaleFactor, int minWindow, 
         // free(dev_iim);
         // free(dev_squared_iim);
         
-
-        rowBlock = ((temp_size.width - WINDOW_SIZE) + dimBlock - 1) / dimBlock;
-        dimGrid = (temp_size.height - WINDOW_SIZE) * rowBlock;
+        compute_grid_dimension(temp_size.height * temp_size.width, &dimBlock, &dimGrid);
 
         cudaDeviceSynchronize();
         cuda_evaluate <<< dimGrid, dimBlock >>>(classifier, iim, squared_iim, temp_size.width, temp_size.height, curr_winSize, currFactor, faces, dev_face_counter);

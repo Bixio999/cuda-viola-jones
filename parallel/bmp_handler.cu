@@ -151,9 +151,8 @@ pel* rgb2grey(pel* image)
 {
 	pel* dev_image;
 
-	uint dimBlock = 256, dimGrid;
-	int rowBlock = (im.width + dimBlock - 1) / dimBlock;
-	dimGrid = im.height * rowBlock;
+	uint dimBlock, dimGrid;
+	compute_grid_dimension(im.height * im.width, &dimBlock, &dimGrid);
 
 	printf("\n dimBlock = %d, dimGrid = %d", dimBlock, dimGrid);
 
