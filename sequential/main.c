@@ -79,12 +79,13 @@ int main(int argc, char const *argv[])
         printf("\nclassifier correctly loaded.");
 
     float scaleFactor = 1.2f;
+    float groupFactor = 2.0f;
     int minSize = 24;
     int maxSize = 0;
 
     double initialTime = seconds();
 
-    List* face = detect_multiple_faces(image, scaleFactor, minSize, maxSize);
+    List* face = detect_multiple_faces(image, scaleFactor, minSize, maxSize, groupFactor);
 
     double elapsedTime = seconds() - initialTime;
     printf("\nElapsed time: %f seconds", elapsedTime);

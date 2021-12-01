@@ -380,7 +380,77 @@ void free_image(pel** image, Size size)
     free(image);
 }
 
-List* detect_multiple_faces(pel** image, float scaleFactor, int minWindow, int maxWindow)
+bool merge_similar_bb(Rectangle* r, List* faces, float merge_threshold)
+{
+    Node* curr, *prev;
+    curr = faces->head;
+    prev = NULL;
+
+    Rectangle* s;
+
+    uint diff_x, diff_y;
+    float distance;
+
+    int a,b,c,d;
+
+    uint normalize_factor = max(im.width, im.height);
+
+    while(curr != NULL)
+    {
+        s = curr->elem;
+
+        diff_x = round((abs((r->x + floor( (float) r->size.width / 2)) - (s->x + floor( (float) s->size.width / 2))) / (float) normalize_factor) * 100);
+        diff_y = round((abs((r->y + floor( (float) r->size.height / 2)) - (s->y + floor( (float) s->size.height / 2))) / (float) normalize_factor) * 100);
+
+        distance = sqrt(diff_x * diff_x + diff_y * diff_x);
+
+        if (distance <= merge_threshold)
+        {
+            a = min(r->x, s->x);
+            b = max(r->x + r->size.width, s->x + s->size.width);
+            c = min(r->y, s->y);
+            d = max(r->y + r->size.height, s->y + s->size.height);
+
+            s->x = a;
+            s->y = c;
+            s->size.width = b - a;
+            s->size.height = d - c;
+
+            return true;
+        }
+        prev = curr;
+        curr = curr->next;
+    }
+    return false;
+}
+
+List* group_rectangles(List* faces, float merge_threshold)
+{
+    if (!faces)
+        return NULL;
+
+    if (faces->size < 2)
+        return faces;
+
+    List* grouped = listInit();
+
+    Rectangle* r, *s;
+
+    while(faces->size > 1)
+    {
+        r = remove_from_head(faces);
+        
+        if (merge_similar_bb(r, faces, merge_threshold))
+            free(r);
+        else
+            add(grouped, r);
+    }
+    add(grouped, remove_from_head(faces));
+
+    return grouped;
+}
+
+List* detect_multiple_faces(pel** image, float scaleFactor, int minWindow, int maxWindow, float group_factor)
 {
     if (image == NULL)
         return NULL;
@@ -442,10 +512,11 @@ List* detect_multiple_faces(pel** image, float scaleFactor, int minWindow, int m
         free_image(res_im, temp_size);
         free_integral_image(iim, temp_size);
         free_integral_image(squared_iim, temp_size);
-
-        // TODO GROUP RECTANGLES
     }
-    return faces;
+
+    List* grouped = group_rectangles(faces, group_factor);
+    free(faces);
+    return grouped;
 }
 
 List* listInit()
