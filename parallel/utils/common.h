@@ -79,6 +79,46 @@ inline void device_name() {
     CHECK(cudaSetDevice(dev));
 }
 
+inline void compute_grid_dimension(unsigned long size, unsigned int* bestBlock, unsigned int* bestGrid)
+{
+    uint i = 32;
+    // int offset = i;
+    *bestBlock = 0;
+    *bestGrid = 0;
+
+    uint dimBlock, dimGrid;
+
+    // while (offset > 1)
+    // {
+    //     dimBlock = i * 32;
+    //     for (j = 1; j * dimBlock < size; j++);
+
+    //     if (j * dimBlock <= *bestBlock * *bestGrid || *bestBlock == 0)
+    //     {
+    //         *bestBlock = dimBlock;
+    //         *bestGrid = j;
+    //     }
+
+    //     offset /= 2;
+    //     if (j > 1)
+    //         i += offset;
+    //     else
+    //         i -= offset;
+    // }
+
+    for (i =32; i > 0; i --)
+    {
+        dimBlock = i * 32;
+        dimGrid = ceil( (float) size / dimBlock);
+
+        if (dimGrid * dimBlock < *bestBlock * *bestGrid || *bestBlock == 0)
+        {
+            *bestBlock = dimBlock;
+            *bestGrid = dimGrid;
+        }
+    }
+}
+
 typedef unsigned long ulong;
 typedef unsigned int uint;
 

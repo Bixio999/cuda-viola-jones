@@ -163,7 +163,18 @@ int main(int argc, char const *argv[])
     CHECK(cudaMalloc((void **) &dev_face_counter, sizeof(unsigned int)));
     CHECK(cudaMemset(dev_face_counter, 0, sizeof(unsigned int)));
 
+    double intialTime = seconds();
+
     Rectangle** dev_faces = detect_multiple_faces(dev_image, scaleFactor, minSize, maxSize, dev_face_counter);
+
+    double elapsedTime = seconds() - intialTime;
+
+    uint dimGrid, dimBlock;
+    compute_grid_dimension(im.width * im.height, &dimBlock, &dimGrid);
+
+    cudaDeviceSynchronize();
+
+    printf("\n Elapsed time: %f seconds", elapsedTime);
 
     unsigned int* face_counter = (unsigned int*) malloc(sizeof(unsigned int));
     CHECK(cudaMemcpy(face_counter, dev_face_counter, sizeof(unsigned int), cudaMemcpyDeviceToHost));
@@ -171,11 +182,7 @@ int main(int argc, char const *argv[])
     if (*face_counter > 0)
     {
         printf("\nDetected %u faces, starting drawing...", *face_counter);
-
-        uint dimGrid, rowBlock, dimBlock = 256;
-        rowBlock = (im.width + dimBlock - 1) / dimBlock;
-        dimGrid = im.height * rowBlock;
-
+        
         pel* dev_original_image;
         int nBytes = sizeof(pel) * im.height * (im.bitColor > 8? im.h_offset : im.width);
         CHECK(cudaMalloc((void**) &dev_original_image, nBytes));
@@ -192,84 +199,9 @@ int main(int argc, char const *argv[])
 
     printf("\n\tface detection completed!\n");
 
-    // printf("\nDetected %d faces in image. Starting drawing...", face->size);
-    
-
-    // if (face->size > 0)
-    // {
-    //     while (face->size > 0)
-    //         draw_rectangle(original_image, remove_from_head(face));
-    //     write_new_BMP("out.bmp", original_image, im.height, im.width, 24);
-    //     // writeBMP(original_image, "out_2.bmp");
-    // }
-    // else
-    //     printf("\n no faces detected in given image.\n");
-    // writeBMP(original_image, "out_2.bmp");
     cudaDeviceReset();
     exit(0);
 }
-
-
-
-// void draw_rectangle(pel** image, Rectangle* face)
-// {
-//     int i,j;
-
-//     short color_RGB = 255;
-//     short color_GREY = 150;
-
-//     if (strcmp(im.type, "GREY") != 0)
-//     {
-//         for (i = face->y, j = face->x; j < face->x + face->size.width; j++)
-//         {
-//             image[i][3 * j + 2] = color_RGB; // r
-//             image[i][3 * j + 1] = 0;   // g
-//             image[i][3 * j] = 0;       // b
-
-//             image[i + face->size.height - 1] [3 * j + 2] = color_RGB; // r
-//             image[i + face->size.height - 1] [3 * j + 1] = 0;   // g
-//             image[i + face->size.height - 1] [3 * j] = 0;       // b
-//         }
-
-//         for (i = face->y, j = face->x; i < face->y + face->size.height; i++)
-//         {
-//             image[i][3 * j + 2] = color_RGB; // r
-//             image[i][3 * j + 1] = 0;   // g
-//             image[i][3 * j] = 0;       // b
-
-//             image[i] [3 * (j + face->size.width - 1) + 2] = color_RGB; // r
-//             image[i] [3 * (j + face->size.width - 1) + 1] = 0;   // g
-//             image[i] [3 * (j + face->size.width - 1)] = 0;       // b
-//         }
-//         return;
-//     }
-
-//     for (i = face->y, j = face->x; j < face->x + face->size.width; j++)
-//     {
-//         image[i][3 * j + 2] = color_GREY; // r
-//         image[i][3 * j + 1] = color_GREY;   // g
-//         image[i][3 * j] = color_GREY;       // b
-
-//         image[i + face->size.height - 1] [3 * j + 2] = color_GREY; // r
-//         image[i + face->size.height - 1] [3 * j + 1] = color_GREY;   // g
-//         image[i + face->size.height - 1] [3 * j] = color_GREY;       // b
-//     }
-
-//     for (i = face->y, j = face->x; i < face->y + face->size.height; i++)
-//     {
-//         image[i][3 * j + 2] = color_GREY; // r
-//         image[i][3 * j + 1] = color_GREY;   // g
-//         image[i][3 * j] = color_GREY;       // b
-
-//         image[i] [3 * (j + face->size.width - 1) + 2] = color_GREY; // r
-//         image[i] [3 * (j + face->size.width - 1) + 1] = color_GREY;   // g
-//         image[i] [3 * (j + face->size.width - 1)] = color_GREY;       // b
-//     }
-// }
-
-
-
-
 
 void compare_grey_images(pel* dev_grey, pel* image)
 {
