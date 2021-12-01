@@ -7,12 +7,14 @@
 
 #include <math_functions.h>
 
-#define min(a,b) (a < b? a : b)
-#define max(a,b) (a > b? a : b)
+// #define min(a,b) (a < b? a : b)
+// #define max(a,b) (a > b? a : b)
 // #define atomicAdd(a,b) atomicAdd((int*) a, (int) b)
 
 #include "classifier.h"
 #include "utils/common.h"
+
+#define N_STREAM 32
 
 typedef struct filter{
     Rectangle rect1;
@@ -539,23 +541,17 @@ void compare_integral_image(pel* image, Size size, double* dev_iim, double* dev_
     printf("\nthe two integral images are equal.");
 }
 
-void cuda_integral_image(pel* image, unsigned int width, unsigned int height, unsigned int original_width, double* iim, double* sq_iim, float factor, short bitColor)
+void cuda_integral_image(pel* image, unsigned int width, unsigned int height, unsigned int original_width, double* iim, double* sq_iim, float factor, short bitColor, cudaStream_t stream)
 {
     uint dimBlock, dimGrid;
 
-    // dimGrid = ceil((float) height / dimBlock);
     compute_grid_dimension(height, &dimBlock, &dimGrid);
 
-    printf("\n\tiim row - dimblock = %u, dimgrid = %u | width = %u, height = %u", dimBlock, dimGrid, width, height);
+    cuda_integral_image_row <<< dimGrid, dimBlock, 0, stream >>>(image, width, height, original_width, iim, sq_iim, factor, bitColor);
 
-    cuda_integral_image_row <<< dimGrid, dimBlock >>>(image, width, height, original_width, iim, sq_iim, factor, bitColor);
-
-    // dimGrid = ceil((float) width / dimBlock);
     compute_grid_dimension(width, &dimBlock, &dimGrid);
 
-    printf("\n\tiim cols - dimblock = %u, dimgrid = %u | width = %u, height = %u", dimBlock, dimGrid, width, height);
-
-    cuda_integral_image_col <<<dimGrid, dimBlock >>>(width, height, iim, sq_iim);
+    cuda_integral_image_col <<<dimGrid, dimBlock, 0, stream >>>(width, height, iim, sq_iim);
 }
 
 Rectangle** detect_multiple_faces(pel* image, float scaleFactor, int minWindow, int maxWindow, unsigned int* dev_face_counter)
@@ -569,10 +565,22 @@ Rectangle** detect_multiple_faces(pel* image, float scaleFactor, int minWindow, 
 
     uint dimBlock, dimGrid;
     unsigned long nBytes;
-    double* iim, *squared_iim;
 
     if ( maxWindow < WINDOW_SIZE )
         maxWindow = min(im.width, im.height);
+
+    int max_iteration = floor(log((double) maxWindow / WINDOW_SIZE) / log(scaleFactor));
+
+    int max_stream = min(max_iteration, N_STREAM);
+    cudaStream_t stream[max_stream];
+    int k;
+    for (k = 0; k < max_stream; k++)
+        stream[k] = 0;
+
+    double* iim_vec[max_iteration];
+    double* squared_iim_vec[max_iteration];
+
+    double* iim, *squared_iim;
     
     printf("\nmaxWindow = %d", maxWindow);
 
@@ -580,22 +588,27 @@ Rectangle** detect_multiple_faces(pel* image, float scaleFactor, int minWindow, 
     // CHECK(cudaMemcpy(grey_image, image, sizeof(pel) * im.height * im.h_offset, cudaMemcpyDeviceToHost));
 
     float currFactor;
-    int iteration = 0;
+    int iteration;
+    size_t streamId;
     printf("\ncreating image pyramid...");
-    for (currFactor = 1; ; currFactor*= scaleFactor, iteration++)
+    for (currFactor = 1, iteration = 0; iteration < max_iteration ; currFactor*= scaleFactor, iteration++)
     {
-
-        Size temp_size = { round(im.width / currFactor), round(im.height / currFactor) };
-
         int curr_winSize = round(WINDOW_SIZE * currFactor);
 
         if (minWindow > curr_winSize)
             continue;
 
-        if (maxWindow < curr_winSize)
-            break;
+        // if (maxWindow < curr_winSize)
+        //     break;
+
+        Size temp_size = { round(im.width / currFactor), round(im.height / currFactor) };
 
         printf("\niteration n: %d | resizing factor: %f | height = %u, width = %u", iteration, currFactor, temp_size.height, temp_size.width);
+
+        streamId = iteration % N_STREAM;
+
+        if (floor((float) streamId / N_STREAM) == 0)
+            CHECK(cudaStreamCreate(&(stream[streamId])));
 
         nBytes = sizeof(double) * temp_size.width * temp_size.height;
         
@@ -605,7 +618,7 @@ Rectangle** detect_multiple_faces(pel* image, float scaleFactor, int minWindow, 
         // pel* dev_resized_img, *resized_img;
         // CHECK(cudaMalloc((void **) &dev_resized_img, sizeof(pel) * temp_size.width * temp_size.height));
 
-        cuda_integral_image(image, temp_size.width, temp_size.height, im.width, iim, squared_iim, currFactor, im.bitColor);
+        cuda_integral_image(image, temp_size.width, temp_size.height, im.width, iim, squared_iim, currFactor, im.bitColor, stream[streamId]);
 
         // resized_img = (pel*) malloc(sizeof(pel) * temp_size.width * temp_size.height);
         // CHECK(cudaMemcpy(resized_img, dev_resized_img, sizeof(pel) * temp_size.height * temp_size.width, cudaMemcpyDeviceToHost));
@@ -628,18 +641,44 @@ Rectangle** detect_multiple_faces(pel* image, float scaleFactor, int minWindow, 
         
         compute_grid_dimension(temp_size.height * temp_size.width, &dimBlock, &dimGrid);
 
-        cudaDeviceSynchronize();
-        cuda_evaluate <<< dimGrid, dimBlock >>>(classifier, iim, squared_iim, temp_size.width, temp_size.height, curr_winSize, currFactor, faces, dev_face_counter);
-
-        cudaDeviceSynchronize();
-        // print_classifier<<<1,1>>>(classifier);
         // cudaDeviceSynchronize();
+        cuda_evaluate <<< dimGrid, dimBlock, 0, stream[streamId] >>>(classifier, iim, squared_iim, temp_size.width, temp_size.height, curr_winSize, currFactor, faces, dev_face_counter);
 
-        CHECK(cudaFree(iim));
-        CHECK(cudaFree(squared_iim));
+        if (cudaStreamQuery(stream[streamId]) == cudaSuccess)
+        {
+            CHECK(cudaFree(iim));
+            CHECK(cudaFree(squared_iim));
+            iim_vec[iteration] = NULL;
+            squared_iim_vec[iteration] = NULL;
+        }
+        else
+        {
+            iim_vec[iteration] = iim;
+            squared_iim_vec[iteration] = squared_iim;
+        }
 
         // TODO GROUP RECTANGLES
     }
+
+    int i;
+    for (i = 0; i < max_iteration; i++)
+    {
+        if (i < N_STREAM)
+        {
+            cudaStreamSynchronize(stream[i]);
+            CHECK(cudaStreamDestroy(stream[i]));
+        }
+
+        iim = iim_vec[i];
+        squared_iim = squared_iim_vec[i];
+
+        if (iim != NULL && squared_iim != NULL)
+        {
+            CHECK(cudaFree(iim));
+            CHECK(cudaFree(squared_iim));
+        }
+    }
+
     printf("\ncompleted");
     CHECK(cudaFree(image));
     return faces;

@@ -171,7 +171,6 @@ int main(int argc, char const *argv[])
 
     uint dimGrid, dimBlock;
     compute_grid_dimension(im.width * im.height, &dimBlock, &dimGrid);
-    printf("\n calling draw rectangles with dimBlock = %u, dimGrid = %u", dimBlock, dimGrid);
 
     cudaDeviceSynchronize();
 
@@ -183,13 +182,7 @@ int main(int argc, char const *argv[])
     if (*face_counter > 0)
     {
         printf("\nDetected %u faces, starting drawing...", *face_counter);
-
-        // uint dimGrid, rowBlock, dimBlock = 256;
-        // rowBlock = (im.width + dimBlock - 1) / dimBlock;
-        // dimGrid = im.height * rowBlock;
-
         
-
         pel* dev_original_image;
         int nBytes = sizeof(pel) * im.height * (im.bitColor > 8? im.h_offset : im.width);
         CHECK(cudaMalloc((void**) &dev_original_image, nBytes));
