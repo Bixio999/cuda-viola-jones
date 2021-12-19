@@ -393,7 +393,7 @@ bool merge_similar_bb(Rectangle* r, List* faces, float merge_threshold)
 
     int a,b,c,d;
 
-    uint normalize_factor = max(im.width, im.height);
+    uint normalize_factor = min(im.width, im.height);
 
     while(curr != NULL)
     {
@@ -402,7 +402,7 @@ bool merge_similar_bb(Rectangle* r, List* faces, float merge_threshold)
         diff_x = round((abs((r->x + floor( (float) r->size.width / 2)) - (s->x + floor( (float) s->size.width / 2))) / (float) normalize_factor) * 100);
         diff_y = round((abs((r->y + floor( (float) r->size.height / 2)) - (s->y + floor( (float) s->size.height / 2))) / (float) normalize_factor) * 100);
 
-        distance = sqrt(diff_x * diff_x + diff_y * diff_x);
+        distance = sqrt(diff_x * diff_x + diff_y * diff_y);
 
         if (distance <= merge_threshold)
         {
