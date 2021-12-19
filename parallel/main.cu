@@ -13,81 +13,81 @@ struct Image im;
 
 
 void compare_grey_images(pel* dev_grey, pel* image);
+void draw_rectangle(pel* image, Rectangle* face);
 
+// __global__ void cuda_draw_rectangles(Rectangle** faces, pel* image, unsigned int width, unsigned int height, bool rgb)
+// {
+//     unsigned long id = blockIdx.x * blockDim.x + threadIdx.x;
 
-__global__ void cuda_draw_rectangles(Rectangle** faces, pel* image, unsigned int width, unsigned int height, bool rgb)
-{
-    unsigned long id = blockIdx.x * blockDim.x + threadIdx.x;
+//     if (id >= width * height)
+//         return;
 
-    if (id >= width * height)
-        return;
+//     Rectangle* face = faces[id];
 
-    Rectangle* face = faces[id];
+//     if (face == NULL)
+//         return;
 
-    if (face == NULL)
-        return;
+//     short color_RGB = 255;
+//     short color_GREY = 150;
 
-    short color_RGB = 255;
-    short color_GREY = 150;
+//     uint i, j;
+//     if (rgb)
+//     {
+        // for (i = face->y, j = face->x; j < face->x + face->size.width; j++)
+        // {
+        //     image[(i * width + j) * 3 + 2] = color_RGB;
+        //     image[(i * width + j) * 3 + 1] = 0;
+        //     image[(i * width + j) * 3] = 0;
+        //     // image[i * width + 3 * j + 1] = 0;
+        //     // image[i * width + 3 * j] = 0;
 
-    uint i, j;
-    if (rgb)
-    {
-        for (i = face->y, j = face->x; j < face->x + face->size.width; j++)
-        {
-            image[(i * width + j) * 3 + 2] = color_RGB;
-            image[(i * width + j) * 3 + 1] = 0;
-            image[(i * width + j) * 3] = 0;
-            // image[i * width + 3 * j + 1] = 0;
-            // image[i * width + 3 * j] = 0;
+        //     image[((i + face->size.height - 1) * width + j) * 3 + 2] = color_RGB;
+        //     image[((i + face->size.height - 1) * width + j) * 3 + 1] = 0;
+        //     image[((i + face->size.height - 1) * width + j) * 3] = 0;
+        //     // image[(i + face->size.height - 1) * width + 3 * j + 1] = 0;
+        //     // image[(i + face->size.height - 1) * width + 3 * j] = 0;
+        // }
 
-            image[((i + face->size.height - 1) * width + j) * 3 + 2] = color_RGB;
-            image[((i + face->size.height - 1) * width + j) * 3 + 1] = 0;
-            image[((i + face->size.height - 1) * width + j) * 3] = 0;
-            // image[(i + face->size.height - 1) * width + 3 * j + 1] = 0;
-            // image[(i + face->size.height - 1) * width + 3 * j] = 0;
-        }
+        // for (i = face->y, j = face->x; i < face->y + face->size.height; i++)
+        // {
+        //     image[(i * width + j) * 3 + 2] = color_RGB; // r
+        //     image[(i * width + j) * 3 + 1] = 0; // r
+        //     image[(i * width + j) * 3] = 0; // r
+        //     // image[i * width + 3 * j + 1] = 0;   // g
+        //     // image[i * width + 3 * j] = 0;       // b
 
-        for (i = face->y, j = face->x; i < face->y + face->size.height; i++)
-        {
-            image[(i * width + j) * 3 + 2] = color_RGB; // r
-            image[(i * width + j) * 3 + 1] = 0; // r
-            image[(i * width + j) * 3] = 0; // r
-            // image[i * width + 3 * j + 1] = 0;   // g
-            // image[i * width + 3 * j] = 0;       // b
+        //     image[(i * width + j + face->size.width - 1) * 3 + 2] = color_RGB; // r
+        //     image[(i * width + j + face->size.width - 1) * 3 + 1] = 0; // r
+        //     image[(i * width + j + face->size.width - 1) * 3] = 0; // r
+        //     // image[i * width + 3 * (j + face->size.width - 1) + 1] = 0;   // g
+        //     // image[i * width + 3 * (j + face->size.width - 1)] = 0;       // b
+        // }
+//     }
+//     else
+//     {
+        // for (i = face->y, j = face->x; j < face->x + face->size.width; j++)
+        // {
+        //     image[i * width + 3 * j + 2] = color_GREY; // r
+        //     image[i * width + 3 * j + 1] = color_GREY;   // g
+        //     image[i * width + 3 * j] = color_GREY;       // b
 
-            image[(i * width + j + face->size.width - 1) * 3 + 2] = color_RGB; // r
-            image[(i * width + j + face->size.width - 1) * 3 + 1] = 0; // r
-            image[(i * width + j + face->size.width - 1) * 3] = 0; // r
-            // image[i * width + 3 * (j + face->size.width - 1) + 1] = 0;   // g
-            // image[i * width + 3 * (j + face->size.width - 1)] = 0;       // b
-        }
-    }
-    else
-    {
-        for (i = face->y, j = face->x; j < face->x + face->size.width; j++)
-        {
-            image[i * width + 3 * j + 2] = color_GREY; // r
-            image[i * width + 3 * j + 1] = color_GREY;   // g
-            image[i * width + 3 * j] = color_GREY;       // b
+        //     image[(i + face->size.height - 1) * width + 3 * j + 2] = color_GREY; // r
+        //     image[(i + face->size.height - 1) * width + 3 * j + 1] = color_GREY;   // g
+        //     image[(i + face->size.height - 1) * width + 3 * j] = color_GREY;       // b
+        // }
 
-            image[(i + face->size.height - 1) * width + 3 * j + 2] = color_GREY; // r
-            image[(i + face->size.height - 1) * width + 3 * j + 1] = color_GREY;   // g
-            image[(i + face->size.height - 1) * width + 3 * j] = color_GREY;       // b
-        }
+        // for (i = face->y, j = face->x; i < face->y + face->size.height; i++)
+        // {
+        //     image[i * width + 3 * j + 2] = color_GREY; // r
+        //     image[i * width + 3 * j + 1] = color_GREY;   // g
+        //     image[i * width + 3 * j] = color_GREY;       // b
 
-        for (i = face->y, j = face->x; i < face->y + face->size.height; i++)
-        {
-            image[i * width + 3 * j + 2] = color_GREY; // r
-            image[i * width + 3 * j + 1] = color_GREY;   // g
-            image[i * width + 3 * j] = color_GREY;       // b
-
-            image[i * width + 3 * (j + face->size.width - 1) + 2] = color_GREY; // r
-            image[i * width + 3 * (j + face->size.width - 1) + 1] = color_GREY;   // g
-            image[i * width + 3 * (j + face->size.width - 1)] = color_GREY;       // b
-        }
-    }
-}
+        //     image[i * width + 3 * (j + face->size.width - 1) + 2] = color_GREY; // r
+        //     image[i * width + 3 * (j + face->size.width - 1) + 1] = color_GREY;   // g
+        //     image[i * width + 3 * (j + face->size.width - 1)] = color_GREY;       // b
+        // }
+//     }
+// }
 
 int main(int argc, char const *argv[])
 {
@@ -142,11 +142,13 @@ int main(int argc, char const *argv[])
         exit(1);
     }
 
+    // write_new_BMP("img.bmp", original_image, im.height, im.width, 24);
+
     // int numbytes = sizeof(pel) * im.h_offset * im.height;
     // pel* grey_image = (pel*) malloc(numbytes);
     // CHECK(cudaMemcpy(grey_image, dev_image, numbytes, cudaMemcpyDeviceToHost));
 
-    // // write_new_BMP("grey.bmp", grey_image, im.height, im.width, 24);
+    // write_new_BMP("grey.bmp", grey_image, im.height, im.width, 24);
     // compare_grey_images(grey_image, original_image);
 
     const char* classifier_file = "../class.txt";
@@ -156,41 +158,35 @@ int main(int argc, char const *argv[])
         printf("\nclassifier correctly loaded.");
 
     float scaleFactor = 1.2f;
+    float groupFactor = 2.0f;
     int minSize = 24;
     int maxSize = 0;
 
-    unsigned int* dev_face_counter;
-    CHECK(cudaMalloc((void **) &dev_face_counter, sizeof(unsigned int)));
-    CHECK(cudaMemset(dev_face_counter, 0, sizeof(unsigned int)));
+    unsigned int face_counter;
 
     double intialTime = seconds();
 
-    Rectangle** dev_faces = detect_multiple_faces(dev_image, scaleFactor, minSize, maxSize, dev_face_counter);
+    List* faces = detect_multiple_faces(dev_image, scaleFactor, minSize, maxSize, &face_counter, groupFactor);
 
     double elapsedTime = seconds() - intialTime;
-
-    uint dimGrid, dimBlock;
-    compute_grid_dimension(im.width * im.height, &dimBlock, &dimGrid);
-
-    cudaDeviceSynchronize();
-
     printf("\n Elapsed time: %f seconds", elapsedTime);
 
-    unsigned int* face_counter = (unsigned int*) malloc(sizeof(unsigned int));
-    CHECK(cudaMemcpy(face_counter, dev_face_counter, sizeof(unsigned int), cudaMemcpyDeviceToHost));
-
-    if (*face_counter > 0)
+    if (face_counter > 0)
     {
-        printf("\nDetected %u faces, starting drawing...", *face_counter);
+        printf("\nDetected %u faces, starting drawing...", face_counter);
+        // printf("\n faces->size = %d", faces->size);
         
-        pel* dev_original_image;
-        int nBytes = sizeof(pel) * im.height * (im.bitColor > 8? im.h_offset : im.width);
-        CHECK(cudaMalloc((void**) &dev_original_image, nBytes));
-        CHECK(cudaMemcpy(dev_original_image, original_image, nBytes, cudaMemcpyHostToDevice));
-
-        cuda_draw_rectangles <<< dimGrid, dimBlock >>> (dev_faces, dev_original_image, im.width, im.height, strcmp(im.type, "GREY") != 0);
-
-        CHECK(cudaMemcpy(original_image, dev_original_image, nBytes, cudaMemcpyDeviceToHost));
+        // unsigned int i = 0;
+        while (faces->size > 0)
+        {
+            Rectangle* r = remove_from_head(faces);
+            // if (r)
+            //     printf("\n\t\t\trectangle: %d { x = %hu, y = %hu, size.width = %u, size.height = %u }",i, r->x, r->y, r->size.width, r->size.height);
+            // else
+            //     printf("\n\tNULL pointer returned from list at i = %u", i);
+            draw_rectangle(original_image, r);
+            // i++;
+        }
 
         write_new_BMP("out.bmp", original_image, im.height, im.width, 24);
     }
@@ -226,4 +222,68 @@ void compare_grey_images(pel* dev_grey, pel* image)
             }
 		}
 	}
+}
+
+void draw_rectangle(pel* image, Rectangle* face)
+{
+    int i,j;
+
+    short color_RGB = 255;
+    short color_GREY = 150;
+
+    if (strcmp(im.type, "GREY") != 0)
+    {
+        for (i = face->y, j = face->x; j < face->x + face->size.width; j++)
+        {
+            image[(i * im.width + j) * 3 + 2] = color_RGB;
+            image[(i * im.width + j) * 3 + 1] = 0;
+            image[(i * im.width + j) * 3] = 0;
+            // image[i * width + 3 * j + 1] = 0;
+            // image[i * width + 3 * j] = 0;
+
+            image[((i + face->size.height - 1) * im.width + j) * 3 + 2] = color_RGB;
+            image[((i + face->size.height - 1) * im.width + j) * 3 + 1] = 0;
+            image[((i + face->size.height - 1) * im.width + j) * 3] = 0;
+            // image[(i + face->size.height - 1) * width + 3 * j + 1] = 0;
+            // image[(i + face->size.height - 1) * width + 3 * j] = 0;
+        }
+
+        for (i = face->y, j = face->x; i < face->y + face->size.height; i++)
+        {
+            image[(i * im.width + j) * 3 + 2] = color_RGB; // r
+            image[(i * im.width + j) * 3 + 1] = 0; // r
+            image[(i * im.width + j) * 3] = 0; // r
+            // image[i * width + 3 * j + 1] = 0;   // g
+            // image[i * width + 3 * j] = 0;       // b
+
+            image[(i * im.width + j + face->size.width - 1) * 3 + 2] = color_RGB; // r
+            image[(i * im.width + j + face->size.width - 1) * 3 + 1] = 0; // r
+            image[(i * im.width + j + face->size.width - 1) * 3] = 0; // r
+            // image[i * width + 3 * (j + face->size.width - 1) + 1] = 0;   // g
+            // image[i * width + 3 * (j + face->size.width - 1)] = 0;       // b
+        }
+        return;
+    }
+
+    for (i = face->y, j = face->x; j < face->x + face->size.width; j++)
+    {
+        image[i * im.width + 3 * j + 2] = color_GREY; // r
+        image[i * im.width + 3 * j + 1] = color_GREY;   // g
+        image[i * im.width + 3 * j] = color_GREY;       // b
+
+        image[(i + face->size.height - 1) * im.width + 3 * j + 2] = color_GREY; // r
+        image[(i + face->size.height - 1) * im.width + 3 * j + 1] = color_GREY;   // g
+        image[(i + face->size.height - 1) * im.width + 3 * j] = color_GREY;       // b
+    }
+
+    for (i = face->y, j = face->x; i < face->y + face->size.height; i++)
+    {
+        image[i * im.width + 3 * j + 2] = color_GREY; // r
+        image[i * im.width + 3 * j + 1] = color_GREY;   // g
+        image[i * im.width + 3 * j] = color_GREY;       // b
+
+        image[i * im.width + 3 * (j + face->size.width - 1) + 2] = color_GREY; // r
+        image[i * im.width + 3 * (j + face->size.width - 1) + 1] = color_GREY;   // g
+        image[i * im.width + 3 * (j + face->size.width - 1)] = color_GREY;       // b
+    }
 }

@@ -14,6 +14,12 @@ run: clean_resized
 run2: clean_resized
 	./viola-jones ../images/Ocean-Eleven.bmp
 
+run3: clean_resized
+	./viola-jones ../images/obama.bmp
+
+crowd: clean_resized
+	./viola-jones ../images/crowd.bmp
+
 .PHONY: run clean debug run2 clean_resized# set_env
 
 debug: main.cu bmp_handler.cu classifier.cu clean

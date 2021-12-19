@@ -1,6 +1,10 @@
 {
     "C_Cpp.errorSquiggles": "Enabled",
     "files.associations": {
-        "classifier.h": "c"
+        "classifier.h": "c",
+        "cmath": "cpp",
+        "chrono": "cpp",
+        "complex": "cpp",
+        "cstdlib": "cpp"
     }
 }

@@ -4,11 +4,12 @@
 #include <stdio.h>
 #include <string.h>
 #include <stddef.h>
+#include <assert.h>
 
 #include <math_functions.h>
 
-// #define min(a,b) (a < b? a : b)
-// #define max(a,b) (a > b? a : b)
+#define min(a,b) (a < b? a : b)
+#define max(a,b) (a > b? a : b)
 // #define atomicAdd(a,b) atomicAdd((int*) a, (int) b)
 
 #include "classifier.h"
@@ -220,7 +221,7 @@ bool load_classifier_to_gpu(const char* classifier_path, const char* config_path
     return false;
 }
 
-__global__ void cuda_evaluate(Classifier* classifier, double* iim, double* sq_iim, unsigned int width, unsigned int height, int currWinSize, float factor, Rectangle** faces, unsigned int* face_counter)
+__global__ void cuda_evaluate(Classifier* classifier, double* iim, double* sq_iim, unsigned int width, unsigned int height, int currWinSize, float factor, Rectangle** faces, unsigned int* face_counter, unsigned int original_width)
 {
     unsigned long id = blockIdx.x * blockDim.x + threadIdx.x;
 
@@ -337,7 +338,6 @@ __global__ void cuda_evaluate(Classifier* classifier, double* iim, double* sq_ii
             //     printf("\n\trect1: a = %.1f, b = %.1f, c = %.1f, d = %.1f, temp = %u", a,b,c,d,temp);
 
             filter_sum += (long int) temp * f->weight1;
-            long int rect1_val = filter_sum;
 
             r = &(f->rect2);
 
@@ -395,10 +395,14 @@ __global__ void cuda_evaluate(Classifier* classifier, double* iim, double* sq_ii
     face->size.height = currWinSize;
     face->size.width = currWinSize;
 
-    faces[id] = face;
+    unsigned long scaledId = face->y * original_width + face->x;
 
-    atomicAdd(face_counter, 1);
-    // printf("\ndetected face at (%u, %u).", face->y,face->x);
+    if (!faces[scaledId])
+        atomicAdd(face_counter, 1);
+
+    faces[scaledId] = face;
+
+    // printf("\ndetected face at (%u, %u), id = %lu.", face->y,face->x, scaledId);
 }
 
 __global__ void cuda_integral_image_row(pel* image, unsigned int width, unsigned int height, unsigned int original_width, double* iim, double* squared_iim, float factor, short bitColor)
@@ -554,7 +558,461 @@ void cuda_integral_image(pel* image, unsigned int width, unsigned int height, un
     cuda_integral_image_col <<<dimGrid, dimBlock, 0, stream >>>(width, height, iim, sq_iim);
 }
 
-Rectangle** detect_multiple_faces(pel* image, float scaleFactor, int minWindow, int maxWindow, unsigned int* dev_face_counter)
+__global__ void cuda_collect_results(List** sub_lists, Rectangle** faces, unsigned int height, unsigned int width, unsigned int* face_counter, float merge_threshold)
+{
+    unsigned long id = blockIdx.x * blockDim.x + threadIdx.x;
+
+    if (id >= height)
+        return;
+
+    List* list = NULL;
+    
+    int i;
+    Rectangle* r, *s;
+    Node* node;
+
+    uint diff_x, diff_y;
+    float distance;
+
+    int a,b,c,d;
+
+    uint normalize_factor = max(width, height);
+
+    // if (threadIdx.x == 62 && blockIdx.x == 1)
+    //     printf("\n hello my id is %lu, my sublist pointer currently is: %p", id, sub_lists[id]);
+
+    for (i = 0; i < width; i++)
+    {
+        r = faces[id * width + i];
+        if (r != NULL)
+        {
+            // printf("\n found face at (%lu,%d).", id, i);
+            // atomicAdd(results_counter, 1);
+
+            if (!list)
+            {
+                list = (List*) malloc(sizeof(List));
+                assert(list != NULL);
+                list->size = 0;
+                list->head = NULL;
+                list->tail = NULL;
+
+                node = (Node*) malloc(sizeof(Node));
+                assert(node != NULL);
+                node->elem = r;
+                node->next = NULL;
+
+                list->head = node;
+                list->tail = node;
+                list->size++;
+            }
+            else if (list->size == 0)
+            {
+                // if (threadIdx.x == 62 && blockIdx.x == 1)
+                //     printf("\ncollect_results at row %lu: found first face",id);
+                node = (Node*) malloc(sizeof(Node));
+                assert(node != NULL);
+                node->elem = r;
+                node->next = NULL;
+
+                list->head = node;
+                list->tail = node;
+                list->size++;
+            }
+            else
+            {
+                
+
+                node = list->head;
+                while(node != NULL)
+                {
+                    s = node->elem;
+
+                    diff_x = round((abs((r->x + floor( (float) r->size.width / 2)) - (s->x + floor( (float) s->size.width / 2))) / (float) normalize_factor) * 100);
+                    diff_y = round((abs((r->y + floor( (float) r->size.height / 2)) - (s->y + floor( (float) s->size.height / 2))) / (float) normalize_factor) * 100);
+
+                    distance = sqrt((double) (diff_x * diff_x + diff_y * diff_x));
+
+                    if (distance <= merge_threshold)
+                    {
+                        // if (threadIdx.x == 62 && blockIdx.x == 1)
+                        //     printf("\ncollect_results at row %lu: found a result equal to another face (distance = %.2f, diff_x = %u, diff_y = %u, r = (%u,%u), s = (%u,%u)), merging...",id, distance, diff_x, diff_y, r->x, r->y, s->x, s->y);
+                        a = min(r->x, s->x);
+                        b = max(r->x + r->size.width, s->x + s->size.width);
+                        c = min(r->y, s->y);
+                        d = max(r->y + r->size.height, s->y + s->size.height);
+
+                        s->x = a;
+                        s->y = c;
+                        s->size.width = b - a;
+                        s->size.height = d - c;
+
+                        atomicSub(face_counter, 1);
+
+                        break;
+                    }
+                    node = node->next;
+                }
+
+                if (node == NULL)
+                {
+                    // if (threadIdx.x == 62 && blockIdx.x == 1)
+                    //     printf("\ncollect_results at row %lu: found another face",id);
+                    node = (Node*) malloc(sizeof(Node));
+                    assert(node != NULL);
+                    node->elem = r;
+                    node->next = NULL;
+
+                    node->next = list->head;
+                    list->head = node;
+                    list->size++;
+                }   
+            }
+        }
+    }
+
+    if (list && list->size > 0)
+    {
+        sub_lists[id] = list;
+        // printf("\nlist size n. %lu = %d", id, list->size);
+    }
+}
+
+__global__ void cuda_merge_sublists(List** sub_lists, unsigned int n_lists, unsigned int size, unsigned int offset, Rectangle* results)
+{
+    uint tid = threadIdx.x;
+    unsigned long idx = blockIdx.x * blockDim.x + threadIdx.x;
+
+    // boundary check
+    if (idx >= n_lists) 
+        return;
+
+    // if (tid < 10)
+    //     printf("\n idx = %lu, thisBlock offset = %u", idx, (blockIdx.x * blockDim.x) * offset);
+
+    // convert global data ptr to the local ptr of this block
+    int blockOffset = (blockIdx.x * blockDim.x) * offset;
+    List **thisBlock = sub_lists + blockOffset;
+
+    // in-place reduction in global memory
+    int stride, oldStride, unmerged_range = 0;
+    bool odd_lists = n_lists % 2;
+    List* a = NULL, *b = NULL;
+    for (stride = min(min(n_lists, blockDim.x), size - blockOffset) / 2, oldStride = stride; stride > 0; stride = stride > 1 ? ceil(stride / 2.0f) : 0) 
+    { 
+        // if (threadIdx.x == 0 && blockIdx.x == 0 && gridDim.x == 1)
+        //     printf("\n stride = %d", stride);
+
+        if (oldStride - stride * 2 > 0 && !unmerged_range)
+            unmerged_range = oldStride;
+
+        if (tid < stride || (tid <= stride && odd_lists && oldStride == stride))
+        {
+            a = thisBlock[tid * offset];
+            b = thisBlock[(tid + stride) * offset];
+
+            // if (threadIdx.x == 0 && blockIdx.x == 0 && gridDim.x == 1)
+            //     printf("\n\t sub_list offset = %u, a = thisBlock[%d] = %p, b = thisBlock[%d] = %p", (blockIdx.x * blockDim.x) * offset, tid * offset, a, (tid + stride) * offset, b);
+
+            if (a && b)
+            {
+                // if (gridDim.x == 1)
+                // // {
+                //     printf("\n\t sub_list offset = %u, a = thisBlock[%d] = %p, b = thisBlock[%d] = %p\n\t\t Lists merging\n\t\t list a (%p): { size = %d, head = %p, tail = %p }\n\t\t list b (%p): { size = %d, head = %p, tail = %p }", (blockIdx.x * blockDim.x) * offset, tid * offset, a, (tid + stride) * offset, b, a, a->size, a->head, a->tail, b, b->size, b->head, b->tail);
+
+                // }
+
+                a->tail->next = b->head;
+                a->tail = b->tail;
+                a->size += b->size;
+                thisBlock[(tid + stride) * offset] = NULL;
+            }
+            else if (b)
+            {
+                thisBlock[tid * offset] = b;
+                thisBlock[(tid + stride) * offset] = NULL;
+
+                // if (gridDim.x == 1)
+                // // {
+                //     printf("\n\t sub_list offset = %u, a = thisBlock[%d] = %p, b = thisBlock[%d] = %p\n\t\t List b moved to a\n\t\t list: { size = %d, head = %p, tail = %p }", (blockIdx.x * blockDim.x) * offset, tid * offset, a, (tid + stride) * offset, b, b->size, b->head, b->tail);
+                // }
+            }
+
+            // if (threadIdx.x == 326 && blockIdx.x == 1)
+            //     printf("\n\t\t Memory access completed.");
+
+            // a = NULL;
+            // b = NULL;
+        }
+
+        oldStride = stride;
+
+        // synchronize within threadblock
+        __syncthreads();
+    }
+
+    if (tid == 0)
+    {
+        a = thisBlock[0];
+        if (a && unmerged_range > 0)
+        {
+            // printf("\nunmerged lists detected, unmerged_range = %d", unmerged_range);
+            int i;
+            for (i = 1; i < unmerged_range; i++)
+            {
+                b = thisBlock[i * offset];
+                if (b)
+                {
+                    a->tail->next = b->head;
+                    a->tail = b->tail;
+                    a->size += b->size;
+                    thisBlock[i * offset] = NULL;
+                }
+            }
+        }
+    }
+
+    if (results && tid == 0 && gridDim.x == 1)
+    {
+        List* list = sub_lists[0];
+        int i;
+        Node* curr = list->head;
+        Rectangle* r, *s;
+
+        // printf("\n list->size after merging = %d", list->size);
+
+        for (i = 0; i < list->size && curr != NULL; i++ )
+        {
+            r = curr->elem;
+            s = &(results[i]);
+            // printf("\n\t\t\trectangle %d: { x = %hu, y = %hu, size.width = %u, size.height = %u }", i, r->x, r->y, r->size.width, r->size.height);
+
+            s->size = r->size;
+            s->x = r->x;
+            s->y = r->y;
+
+            curr = curr->next;
+        }
+        // if (curr != NULL)
+        //     printf("\n other faces weren't computed in merging...");
+
+        // printf("\n searching for unmerged lists:");
+        // for (i = 1; i < size; i++ )
+        // {
+        //     list = sub_lists[i];
+        //     if (list)
+        //     {
+        //         printf("\n\tfound unmerged list at id = %d:", i);
+        //         printf("\n\t\t list: { size = %d, head = %p, tail = %p }", list->size, list->head, list->tail);
+        //     }
+        // }
+    }
+}
+
+List* gather_results(Rectangle** faces, unsigned int* dev_face_counter, unsigned int* face_counter, float merge_threshold)
+{
+    List** sub_lists;
+    unsigned long size = im.height;
+    unsigned long nBytes = size * sizeof(List*);
+    CHECK(cudaMalloc((void**) &sub_lists, nBytes));
+    CHECK(cudaMemset(sub_lists, 0, nBytes));
+
+    uint dimBlock, dimGrid;
+    compute_grid_dimension(size, &dimBlock, &dimGrid);
+
+    // printf("\n face counter before gathering = %u", *face_counter);
+
+    // unsigned int* results_counter, *h_res_counter;
+    // CHECK(cudaMalloc((void **) &results_counter, sizeof(unsigned int)));
+    // CHECK(cudaMemset(results_counter, 0, sizeof(unsigned int)));
+
+    // tested
+    cuda_collect_results <<< dimGrid, dimBlock >>> (sub_lists, faces, im.height, im.width, dev_face_counter, merge_threshold);
+    // cuda_collect_results <<< dimGrid, dimBlock >>> (sub_lists, faces, im.height, im.width, dev_face_counter, merge_threshold, results_counter);
+
+    unsigned int n_lists = size;
+    unsigned int offset = 1;
+
+    // h_res_counter = (unsigned int*) malloc(sizeof(unsigned int));
+    // CHECK(cudaMemcpy(h_res_counter, results_counter, sizeof(unsigned int), cudaMemcpyDeviceToHost));
+
+    // printf("\nactual results counter while collecting = %u", *h_res_counter);
+
+    // printf("\n dimblock = %u, dimGrid = %u, offset = %u", dimBlock, dimGrid, offset);
+
+    while (n_lists > 256 && dimGrid > 1) {
+        cuda_merge_sublists <<< dimGrid, dimBlock >>> (sub_lists, n_lists, size, offset, NULL);
+
+        // CHECK(cudaDeviceSynchronize());
+        // exit(1);
+
+        n_lists = dimGrid;
+        offset *= dimBlock;
+        compute_grid_dimension(n_lists, &dimBlock, &dimGrid);
+        // printf("\n recomputed: dimblock = %u, dimGrid = %u, offset = %u", dimBlock, dimGrid, offset);
+    }
+
+    CHECK(cudaMemcpy(face_counter, dev_face_counter, sizeof(unsigned int), cudaMemcpyDeviceToHost));
+    nBytes = sizeof(Rectangle) * (*face_counter);
+    Rectangle* dev_results;
+    CHECK(cudaMalloc((void **) &dev_results, nBytes));
+
+    // printf("\n face counter after gathering = %d", *face_counter);
+
+    if (dimGrid > 1)
+    {
+        for (dimBlock = 32; dimBlock < n_lists; dimBlock *= 32);
+        dimGrid = 1;
+    }
+
+    cuda_merge_sublists <<< dimGrid, dimBlock >>> (sub_lists, n_lists, size, offset, dev_results);
+
+    Rectangle* results = (Rectangle*) malloc(nBytes);
+    CHECK(cudaMemcpy(results, dev_results, nBytes, cudaMemcpyDeviceToHost));
+
+    CHECK(cudaFree(sub_lists));
+    CHECK(cudaFree(dev_results));
+
+    // GROUP FACES
+
+    List* grouped = listInit();
+    int i, arraySize = *face_counter;
+    Rectangle* r, *s;
+
+    uint diff_x, diff_y;
+    float distance;
+
+    int a,b,c,d;
+
+    uint normalize_factor = min(im.width, im.height);
+
+    bool merged;
+
+    // FILE* f = fopen("log.txt", "w");
+
+    while (arraySize > 0)
+    {
+        r = &(results[arraySize - 1]);
+        merged = false;
+
+        // fprintf(f, "\nevaluating rect %d: { x = %hu, y = %hu, size.width = %u, size.height = %u }", arraySize -1, r->x, r->y, r->size.width, r->size.height);
+
+        for (i = arraySize - 2; i >= 0; i--)
+        {
+            s = &(results[i]);
+            // fprintf(f, "\n\tcomparing rect %d with rect %d = { x = %hu, y = %hu, size.width = %u, size.height = %u }", arraySize -1, i, s->x, s->y, s->size.width, s->size.height);
+
+            diff_x = round((abs((r->x + floor( r->size.width / 2.0f)) - (s->x + floor( s->size.width / 2.0f))) / (float) normalize_factor) * 100.0f);
+            diff_y = round((abs((r->y + floor( r->size.height / 2.0f)) - (s->y + floor( s->size.height / 2.0f))) / (float) normalize_factor) * 100.0f);
+
+            distance = sqrt(diff_x * diff_x + diff_y * diff_y);
+
+            // fprintf(f, "\tdiff_x = %u, diff_y = %u, distance = %f", diff_x, diff_y, distance);
+
+            if (distance <= merge_threshold)
+            {
+                a = min(r->x, s->x);
+                b = max(r->x + r->size.width, s->x + s->size.width);
+                c = min(r->y, s->y);
+                d = max(r->y + r->size.height, s->y + s->size.height);
+
+                s->x = a;
+                s->y = c;
+                s->size.width = b - a;
+                s->size.height = d - c;
+
+                (*face_counter)--;
+
+                merged = true;
+                break;
+            }
+        }
+
+        arraySize--;
+
+        if (!merged)
+            add(grouped, r);
+        // fprintf(f, "\n\n\tcurrent unique faces detected = %d", grouped->size);
+    }
+    // fclose(f);
+    return grouped;
+}
+
+__global__ void cuda_draw_rectangles(Rectangle** faces, pel* image, unsigned int width, unsigned int height, bool rgb)
+{
+    unsigned long id = blockIdx.x * blockDim.x + threadIdx.x;
+
+    if (id >= width * height)
+        return;
+
+    Rectangle* face = faces[id];
+
+    if (face == NULL)
+        return;
+
+    short color_RGB = 255;
+    short color_GREY = 150;
+
+    uint i, j;
+    if (rgb)
+    {
+        for (i = face->y, j = face->x; j < face->x + face->size.width; j++)
+        {
+            image[(i * width + j) * 3 + 2] = color_RGB;
+            image[(i * width + j) * 3 + 1] = 0;
+            image[(i * width + j) * 3] = 0;
+            // image[i * width + 3 * j + 1] = 0;
+            // image[i * width + 3 * j] = 0;
+
+            image[((i + face->size.height - 1) * width + j) * 3 + 2] = color_RGB;
+            image[((i + face->size.height - 1) * width + j) * 3 + 1] = 0;
+            image[((i + face->size.height - 1) * width + j) * 3] = 0;
+            // image[(i + face->size.height - 1) * width + 3 * j + 1] = 0;
+            // image[(i + face->size.height - 1) * width + 3 * j] = 0;
+        }
+
+        for (i = face->y, j = face->x; i < face->y + face->size.height; i++)
+        {
+            image[(i * width + j) * 3 + 2] = color_RGB; // r
+            image[(i * width + j) * 3 + 1] = 0; // r
+            image[(i * width + j) * 3] = 0; // r
+            // image[i * width + 3 * j + 1] = 0;   // g
+            // image[i * width + 3 * j] = 0;       // b
+
+            image[(i * width + j + face->size.width - 1) * 3 + 2] = color_RGB; // r
+            image[(i * width + j + face->size.width - 1) * 3 + 1] = 0; // r
+            image[(i * width + j + face->size.width - 1) * 3] = 0; // r
+            // image[i * width + 3 * (j + face->size.width - 1) + 1] = 0;   // g
+            // image[i * width + 3 * (j + face->size.width - 1)] = 0;       // b
+        }
+    }
+    else
+    {
+        for (i = face->y, j = face->x; j < face->x + face->size.width; j++)
+        {
+            image[i * width + 3 * j + 2] = color_GREY; // r
+            image[i * width + 3 * j + 1] = color_GREY;   // g
+            image[i * width + 3 * j] = color_GREY;       // b
+
+            image[(i + face->size.height - 1) * width + 3 * j + 2] = color_GREY; // r
+            image[(i + face->size.height - 1) * width + 3 * j + 1] = color_GREY;   // g
+            image[(i + face->size.height - 1) * width + 3 * j] = color_GREY;       // b
+        }
+
+        for (i = face->y, j = face->x; i < face->y + face->size.height; i++)
+        {
+            image[i * width + 3 * j + 2] = color_GREY; // r
+            image[i * width + 3 * j + 1] = color_GREY;   // g
+            image[i * width + 3 * j] = color_GREY;       // b
+
+            image[i * width + 3 * (j + face->size.width - 1) + 2] = color_GREY; // r
+            image[i * width + 3 * (j + face->size.width - 1) + 1] = color_GREY;   // g
+            image[i * width + 3 * (j + face->size.width - 1)] = color_GREY;       // b
+        }
+    }
+}
+
+List* detect_multiple_faces(pel* image, float scaleFactor, int minWindow, int maxWindow, unsigned int* host_face_counter, float group_factor)
 {
     if (image == NULL)
         return NULL;
@@ -562,6 +1020,10 @@ Rectangle** detect_multiple_faces(pel* image, float scaleFactor, int minWindow, 
     Rectangle** faces;
     CHECK(cudaMalloc((void **) &faces, sizeof(Rectangle*) * im.width * im.height));
     CHECK(cudaMemset(faces, 0, sizeof(Rectangle*) * im.width * im.height));
+
+    unsigned int* dev_face_counter;
+    CHECK(cudaMalloc((void**) &dev_face_counter, sizeof(unsigned int)));
+    CHECK(cudaMemset(dev_face_counter, 0, sizeof(unsigned int)));
 
     uint dimBlock, dimGrid;
     unsigned long nBytes;
@@ -642,7 +1104,7 @@ Rectangle** detect_multiple_faces(pel* image, float scaleFactor, int minWindow, 
         compute_grid_dimension(temp_size.height * temp_size.width, &dimBlock, &dimGrid);
 
         // cudaDeviceSynchronize();
-        cuda_evaluate <<< dimGrid, dimBlock, 0, stream[streamId] >>>(classifier, iim, squared_iim, temp_size.width, temp_size.height, curr_winSize, currFactor, faces, dev_face_counter);
+        cuda_evaluate <<< dimGrid, dimBlock, 0, stream[streamId] >>>(classifier, iim, squared_iim, temp_size.width, temp_size.height, curr_winSize, currFactor, faces, dev_face_counter, im.width);
 
         if (cudaStreamQuery(stream[streamId]) == cudaSuccess)
         {
@@ -656,8 +1118,6 @@ Rectangle** detect_multiple_faces(pel* image, float scaleFactor, int minWindow, 
             iim_vec[iteration] = iim;
             squared_iim_vec[iteration] = squared_iim;
         }
-
-        // TODO GROUP RECTANGLES
     }
 
     int i;
@@ -679,7 +1139,72 @@ Rectangle** detect_multiple_faces(pel* image, float scaleFactor, int minWindow, 
         }
     }
 
+    CHECK(cudaDeviceSynchronize());
+
+    CHECK(cudaMemcpy(host_face_counter, dev_face_counter, sizeof(unsigned int), cudaMemcpyDeviceToHost));
+
     printf("\ncompleted");
+
+    // compute_grid_dimension(im.height * im.width, &dimBlock, &dimGrid);
+    // cuda_draw_rectangles<<< dimGrid, dimBlock >>> (faces, image, im.width, im.height, im.bitColor > 8);
+    // pel* host_image = (pel*) malloc(im.height * im.h_offset);
+    // CHECK(cudaMemcpy(host_image, image, im.height * im.h_offset, cudaMemcpyDeviceToHost));
+    // write_new_BMP("grey_test.bmp", host_image, im.height, im.width, im.bitColor);
+
     CHECK(cudaFree(image));
-    return faces;
+
+    if (*host_face_counter > 0)
+        return gather_results(faces, dev_face_counter, host_face_counter, group_factor);
+    return NULL;
+}
+
+List* listInit()
+{
+    List* list = (List*) malloc(sizeof(List));
+    list->head = NULL;
+    list->size = 0;
+
+    return list;
+}
+
+void add(List* list, Rectangle* r)
+{
+    if (list)
+    {
+        Node* node = (Node*) malloc(sizeof(Node));
+        node->elem = r;
+        node->next = NULL;
+
+    if (list->size == 0)
+        {
+            list->head = node;
+            list->size++;
+            return;
+        }
+
+        node->next = list->head;
+        list->head = node;
+        list->size++;
+        return;
+    }
+    printf("\n Error: received null list parameter.");
+}
+
+Rectangle* remove_from_head(List* list)
+{
+    if (list)
+    {
+        if (list->size > 0)
+        {
+            Node* old = list->head;
+            Rectangle* r = old->elem;
+            // free(old);
+            list->head = list->head->next;
+            list->size--;
+            return r;
+        }
+        printf("\n Error: trying to remove element with empty list.");
+    }
+    printf("\n Error: received null list parameter.");
+    return NULL;
 }
