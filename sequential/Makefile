@@ -12,3 +12,6 @@ run:
 
 run2: 
 	./viola-jones.out ../images/Ocean-Eleven.bmp
+
+crowd: 
+	./viola-jones.out ../images/crowd.bmp

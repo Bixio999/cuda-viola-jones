@@ -399,8 +399,8 @@ bool merge_similar_bb(Rectangle* r, List* faces, float merge_threshold)
     {
         s = curr->elem;
 
-        diff_x = round((abs((r->x + floor( (float) r->size.width / 2)) - (s->x + floor( (float) s->size.width / 2))) / (float) normalize_factor) * 100);
-        diff_y = round((abs((r->y + floor( (float) r->size.height / 2)) - (s->y + floor( (float) s->size.height / 2))) / (float) normalize_factor) * 100);
+        diff_x = round((abs((r->x + floor( r->size.width / 2.0f)) - (s->x + floor( s->size.width / 2.0f))) / (float) normalize_factor) * 100);
+        diff_y = round((abs((r->y + floor( r->size.height / 2.0f)) - (s->y + floor(  s->size.height / 2.0f))) / (float) normalize_factor) * 100);
 
         distance = sqrt(diff_x * diff_x + diff_y * diff_y);
 
