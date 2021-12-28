@@ -5,11 +5,25 @@
 #include <string.h>
 #include <stddef.h>
 
+// Aliases for minimum and maximum between two variables as conditional operator 
+// due to absence of definitions in C libraries
 #define min(a,b) (a < b? a : b)
 #define max(a,b) (a > b? a : b)
 
+// Link the header
 #include "classifier.h"
 
+// UTILITY STRUCTURES FOR CLASSIFIER
+
+/* 
+- Filter defines the data for the single Weak Classifier. 
+    Each of them is composed by three possibile rectangles that represent
+    the locations for the Haar-like features in the window. Then each 
+    rectangle has its own weight. The sum of the weighted areas is than 
+    compared to its threshold. A filter's outputs are two values that 
+    represents the positive (alpha1) and negative (alpha2) results, which 
+    are its contribution for the stage evaluation.
+*/
 typedef struct filter{
     Rectangle rect1;
     int weight1;
@@ -22,6 +36,14 @@ typedef struct filter{
     int alpha1, alpha2;
 } Filter;
 
+/*
+- Classifier defines the data of the Cascade Classifier.
+    It contains the references and values for:
+    * the multi-array structure of all the filters;
+    * an array for the total number of filters for each stage;
+    * an array for the stage thresholds;
+    * the total number of stages that has to be evaluated.
+*/
 typedef struct classifier
 {
     Filter*** filters;
@@ -30,34 +52,43 @@ typedef struct classifier
     int n_stages;
 } Classifier;
 
-const int window_size = 24;
-
+// The classifier variable is defined as global in order to be used by 
+// all functions without the direct reference.
 Classifier* classifier;
 
+/*
+    Load the classifier in memory by reading from the given classifier's path for
+    its data, and from the config's path for the number of stages and the numbers
+    of filters per stage. The function outputs the result of the loading operation.
+*/
 bool load_classifier(const char* classifier_path, const char* config_path)
 {
+    // Check if the arguments are not null
     if (classifier_path && config_path)
     {
-        printf("\nnot null parameters: %s, %s", classifier_path, config_path);
+        printf("\nClassifier's files paths correctly received: %s, %s", classifier_path, config_path);
 
+        // Open and read from the configuration's file
         FILE* config_file = fopen(config_path, "r");
 
+        // Check if the file opening successed
         if (!config_file)
         {
             printf("\nerror while reading from config file. aborting...");
-            exit(1);
+            return false;
         }
 
+        // Read the number of stages
         int stages = 0;
         fscanf(config_file, "%d", &stages);
         if (!stages)
         {
             printf("\nerror while reading from config file. aborting...");
-            exit(1);
+            return false;
         }
         
+        // Read the number of filters per stage
         int* filter_per_stages = (int*) malloc(sizeof(int) * stages);
-
         int i = 0;
         int n_filters = 0;
         int* temp = filter_per_stages;
@@ -70,12 +101,25 @@ bool load_classifier(const char* classifier_path, const char* config_path)
 
         fclose(config_file);
 
+        // Open and read the classifier's data file
         FILE* classifier_file = fopen(classifier_path, "r");
         if (!classifier_file)
         {
             printf("\nerror while reading from classifier file. aborting...");
-            exit(1);
+            return false;
         }
+
+        /* 
+            The classifier file contains the filter's data for each stage in sequence, followed
+            at the end by the stage threshold. So the reading proceeds by reading n filters 
+            (according to the filters number for the current stage, read before from the config
+            file) and then read the corresponding stage threshold.
+
+            The filter data structure is a multi dimentional array of size (number of stages * 
+            number of filters for each stage), in order to have a mono-dimentional array for each
+            stage that contains the exactly number of filters for the current stage. Also the 
+            strategy used allows to allocate the memory in a dynamic way. 
+        */
 
         Filter*** filters = (Filter***) malloc(sizeof(Filter**) * stages);
         int* stage_thresholds = (int*) malloc(sizeof(int) * stages);
@@ -128,6 +172,7 @@ bool load_classifier(const char* classifier_path, const char* config_path)
         }
         fclose(classifier_file);
 
+        // Allocate and assign the classifier's data
         Classifier* class = malloc(sizeof(Classifier));
         class->filters = filters;
         class->filters_per_stages = filter_per_stages;
@@ -320,24 +365,24 @@ void evaluate(double** iim, double** sq_iim, Size size, int currWinSize, float f
     int i, j, stage, k;
     unsigned int variance, mean;
 
-    for (i = 0; i < size.height - window_size; i++)
+    for (i = 0; i < size.height - WINDOW_SIZE; i++)
     {
-        for (j = 0; j < size.width - window_size; j++)
+        for (j = 0; j < size.width - WINDOW_SIZE; j++)
         {
             /// VARIANCE COMPUTATION
 
-            mean = iim[i + window_size - 1][j + window_size - 1];
-            variance = sq_iim[i + window_size - 1][j + window_size - 1];
+            mean = iim[i + WINDOW_SIZE - 1][j + WINDOW_SIZE - 1];
+            variance = sq_iim[i + WINDOW_SIZE - 1][j + WINDOW_SIZE - 1];
 
             if (i > 0)
             {
-                mean -= iim[i-1][j + window_size - 1];
-                variance -= sq_iim[i-1][j + window_size - 1];
+                mean -= iim[i-1][j + WINDOW_SIZE - 1];
+                variance -= sq_iim[i-1][j + WINDOW_SIZE - 1];
             }
             if (j > 0)
             {
-                mean -= iim[i + window_size - 1][j-1];
-                variance -= sq_iim[i + window_size - 1][j-1];
+                mean -= iim[i + WINDOW_SIZE - 1][j-1];
+                variance -= sq_iim[i + WINDOW_SIZE - 1][j-1];
             }
             if (i > 0 && j > 0)
             {
@@ -345,7 +390,7 @@ void evaluate(double** iim, double** sq_iim, Size size, int currWinSize, float f
                 variance += sq_iim[i-1][j-1];
             }
 
-            variance = (variance * (window_size * window_size)) - mean * mean;
+            variance = (variance * (WINDOW_SIZE * WINDOW_SIZE)) - mean * mean;
             variance = variance > 0 ? sqrt(variance) : 1;
 
             // FILTERS EVALUATION
@@ -458,7 +503,7 @@ List* detect_multiple_faces(pel** image, float scaleFactor, int minWindow, int m
     List* faces = listInit();
     printf("\n list init completed");
 
-    if ( minWindow <= window_size )
+    if ( minWindow <= WINDOW_SIZE )
     {
         Size image_size = { im.width, im.height };
         double** iim, **squared_iim;
@@ -470,13 +515,13 @@ List* detect_multiple_faces(pel** image, float scaleFactor, int minWindow, int m
         else
             integral_image(image, image_size, &iim, &squared_iim);
         
-        evaluate(iim, squared_iim, image_size, window_size, 1, faces);
+        evaluate(iim, squared_iim, image_size, WINDOW_SIZE, 1, faces);
         free_integral_image(iim, image_size);
         free_integral_image(squared_iim, image_size);
         printf("\niims deleted and memory free");
     }
 
-    if ( maxWindow < window_size )
+    if ( maxWindow < WINDOW_SIZE )
         maxWindow = min(im.width, im.height);
     
     printf("\nmaxWindow = %d", maxWindow);
@@ -488,7 +533,7 @@ List* detect_multiple_faces(pel** image, float scaleFactor, int minWindow, int m
     {
         Size temp_size = { round(im.width / currFactor), round(im.height / currFactor) };
 
-        int curr_winSize = round(window_size * currFactor);
+        int curr_winSize = round(WINDOW_SIZE * currFactor);
 
         if (minWindow > curr_winSize)
             continue;
