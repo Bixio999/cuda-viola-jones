@@ -90,7 +90,6 @@ bool load_classifier(const char* classifier_path, const char* config_path)
         // Read the number of filters per stage
         int* filter_per_stages = (int*) malloc(sizeof(int) * stages);
         int i = 0;
-        int n_filters = 0;
         int* temp = filter_per_stages;
         while (i < stages && !feof(config_file))
         {
@@ -125,6 +124,7 @@ bool load_classifier(const char* classifier_path, const char* config_path)
         int* stage_thresholds = (int*) malloc(sizeof(int) * stages);
 
         int j;
+        int n_filters = 0;
         int* st_thr = stage_thresholds;
         for (i = 0; i < stages; i++)
         {
@@ -289,8 +289,8 @@ bool runClassifier(double** iim, int y, int x, unsigned int variance)
 
             filter_sum = 0;
             
-            // Calculate the actual filter's by adjusting with the variance
-            // the filter's data
+            // Calculate the actual filter's threshold by weighting the
+            // the filter's data with the variance of the window
             threshold = (long int) f->threshold * variance;
 
             // Get the first rectangle 

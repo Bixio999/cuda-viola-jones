@@ -176,6 +176,7 @@ pel** rgb2grey(pel** image)
 	return grey_image;
 }
 
+// Write a Bitmap image by recomputing the header info
 void write_new_BMP(char* dest_path, pel** image, int h, int w, int bitColor)
 {
 	FILE *f;

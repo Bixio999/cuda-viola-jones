@@ -157,12 +157,12 @@ int main(int argc, char const *argv[])
 
     double elapsedTime = seconds() - initialTime;
     printf("\nElapsed time: %f seconds", elapsedTime);
-
-    printf("\nDetected %d faces in image. Starting drawing...", face->size);
     
     // Check if any faces was detected
     if (face->size > 0)
     {
+        printf("\nDetected %d faces in image. Starting drawing...", face->size);
+
         // For each result in the list, draw it in the original image
         while (face->size > 0)
             draw_rectangle(original_image, remove_from_head(face));
@@ -202,6 +202,8 @@ void draw_rectangle(pel** image, Rectangle* face)
         b = color_GREY;
     }
 
+    // Draw the rectangle by overwriting the pixels values
+    
     for (i = face->y, j = face->x; j < face->x + face->size.width; j++)
     {
         image[i][3 * j + 2] = r; // r
