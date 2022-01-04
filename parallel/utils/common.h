@@ -79,6 +79,43 @@ inline void device_name() {
     CHECK(cudaSetDevice(dev));
 }
 
+/*
+    Compute the optimal grid and blocks dimension for the given size, in order
+    to maximize the occupancy and minimize the inactive threads. 
+
+    The bestBlock and bestGrid arguments are the dimGrid and dimBlocks variables,
+    that have to be passed by reference.
+*/ 
+inline void compute_grid_dimension(unsigned long size, unsigned int* bestBlock, unsigned int* bestGrid)
+{
+    // Warp size
+    uint i = 32;
+
+    // Set arguments to default value
+    *bestBlock = 0;
+    *bestGrid = 0;
+
+    uint dimBlock, dimGrid;
+
+    // Check for each possible block size, from 1024 to 32, and find
+    // the one that minimize the threads surplus compared to the size
+    for (i =32; i > 0; i --)
+    {
+        // Calculate the current block's dimension
+        dimBlock = i * 32;
+        // Calculate the grid dimension
+        dimGrid = ceil( (float) size / dimBlock);
+
+        // Check if the best combination is worst than the current one
+        if (dimGrid * dimBlock < *bestBlock * *bestGrid || *bestBlock == 0)
+        {
+            // If a better combination was found, update the variables
+            *bestBlock = dimBlock;
+            *bestGrid = dimGrid;
+        }
+    }
+}
+
 typedef unsigned long ulong;
 typedef unsigned int uint;
 
