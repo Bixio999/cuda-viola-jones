@@ -164,7 +164,7 @@ The solution implemented for this problem is divided into two phases:
 
 ### Comparison and Metrics
 
-As mentioned in the introduction, the results of the CUDA version compared to the classic sequential version are excellents. This demonstrates that the possibilities for this area of research are several, and the GP-GPU (General Purpose GPU) can lead to new opportunities. 
+As mentioned in the introduction, the results of the CUDA version compared to the sequential version are excellents. This demonstrates that the possibilities for this area of research are several, and the GP-GPU (General Purpose GPU) paradigm can lead to new opportunities. 
 
 Below there are some tests of execution with different inputs. For these benchmarks, the used GPU was an NVIDIA Quadro P6000.
 
@@ -181,7 +181,7 @@ Below there are some tests of execution with different inputs. For these benchma
 | (2560 × 1707)      | 4.369.920 | 0.067517       | 6.800974       |
 | (1000 × 668)       | 668.000   | 0.023232       | 1.614393       |
 
-The following image is an approximation of the time cost functions obtained through linear regression, using the statistics from the previous table. The graph shows as blue line and points the CPU time function and its data, and as red line and points the GPU time function and its data. The $y$ axis corresponds to time, while the $x$ axis is the size of the input expressed as total number of pixels to evaluate.
+The following image is an approximation of the time cost functions obtained through linear regression, using the statistics from the previous table. The graph shows as blue line and points the CPU time function and its data, and as red line and points the GPU time function and its data. The $y$ axis corresponds to time, while the $x$ axis is the input size expressed as the total number of pixels to be evaluated.
 
 <img src="./assets/viola-jones-cost_functions.png" alt="viola-jones-cost_functions"  />
 
