@@ -50,10 +50,11 @@
     However the computation of the II offers that speed-up respect to the area computation 
     when needed, but is highly dependant to the size of the image to evaluate: with big images, 
     its pre-computation takes a while. That is due to the algorithm complexity of O(n^2). 
-    The Viola-Jones algorithm was really innovative for its times (about the 90s) because
-    the images to evaluate was small. But at this time, the sizes of high quality images 
-    are exponentially bigger than before, making this algorithm too slow. Now, for these 
-    kind of tasks, artificial intelligences and neural networks are used rather than Viola-Jones.
+    The Viola-Jones algorithm was really innovative for its times (about the first years of the 
+    21th century) because the images to evaluate was small. But at this time, the sizes of high 
+    quality images are exponentially bigger than before, making this algorithm too slow. Now, 
+    for these kind of tasks, artificial intelligences and neural networks are used rather than 
+    Viola-Jones.
 
     GPU OPTIMIZATION
 
