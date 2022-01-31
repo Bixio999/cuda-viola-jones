@@ -211,3 +211,7 @@ However, this Viola-Jones Face Detection demonstated the power of GPU computing 
 2. Zhenyu Ye, Francesco Tomarchi, **Viola-Jones Face Detection**, https://sites.google.com/site/5kk73gpu2012/assignment/viola-jones-face-detection, 2012;
 3. Imene Guerfi, Lobna Kriaa and Leila Azouz Saidane, **An Efficient GPGPU based Implementation of Face Detection Algorithm using Skin Color Pre-treatment**, https://www.scitepress.org/Papers/2020/98333/98333.pdf;
 4. Su Wu, Pu Li, **Multi-Core Architectures and Programming: Viola-Jones with CUDA**, https://www12.informatik.uni-erlangen.de/edu/map/ss15/talks/vj_cuda.pdf.
+
+------
+
+A special thanks to <a href="https://github.com/giuseppe16180">Giuseppe Marino</a> and <a href="https://github.com/manuelpagliuca">Manuel Pagliuca</a> for helping me review this paper.
