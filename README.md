@@ -107,7 +107,9 @@ By introducing *Dynamic Parallelism* we are able to execute the kernels of each 
 
 In any case, the parallel algorithm provides only the streams that are needed for the execution: they are defined as an array of *CudaStream*, and the size of this array depends on the number of iterations needed, that can be calculated a-priori by the following formula:
 
-$$ iterations = \left\lfloor \frac {\log(\frac{maxWindow}{24})} {\log(factor)} \right\rfloor \\ streams = \min \{ iterations, \ 32 \} $$
+$$ iterations = \left\lfloor \frac {\log(\frac{maxWindow}{24})} {\log(factor)} \right\rfloor $$
+
+$$ streams = \min (iterations,  32 ) $$
 
 #### Build of the Integral Image and Squared Integral Image
 
@@ -115,7 +117,9 @@ In the proposed implementation, the image resizing for the Image Pyramid constru
 
 In the sequential algorithm, Integral and Squared Integral Images are constructed using a  dynamic programming approach:
 
-$$ II(x,y) = II(x-1,y) + II(x,y-1) + p(x,y) \\ SqII(x,y) = II(x-1,y) + II(x,y-1) + p(x,y)^2 $$
+$$ II(x,y) = II(x-1,y) + II(x,y-1) + p(x,y) $$
+
+$$ SqII(x,y) = II(x-1,y) + II(x,y-1) + p(x,y)^2 $$
 
 where $II$ is the Integral Image, $SqII$ is the Squared Integral Image and $p$ is the image. This solution creates the integral images in a quadratic time. 
 
