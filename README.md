@@ -49,14 +49,14 @@ An ***Haar-like feature*** is a composition of several pixel rectangles that can
 
 
 
-In order to speed-up the computation of rectangular areas for the detection of *Haar-like feature*, the Viola-Jones algorithm uses the so-called ***Integral Image*** (II), that is a matrix of values in which a cell $(x,y)$​​ contains the sum of the pixels in the rectangular sub-region of the image starting at $(0,0)$​​ and ending at $(x,y)$​​. 
+In order to speed-up the computation of rectangular areas for the detection of *Haar-like feature*, the Viola-Jones algorithm uses the so-called ***Integral Image*** (II), that is a matrix of values in which a cell $(x,y)$ contains the sum of the pixels in the rectangular sub-region of the image starting at $(0,0)$ and ending at $(x,y)$. 
 
 <img src="./assets/ii definition.png" alt="image-20220105140711010" style="zoom: 70%;" />
 
 By pre-computing this Integral Image, the amount of calculation of the areas of the rectangle is significantly reduced compared to the naive approach, from the sum of all pixels in the rectangle to a simple sum of four values:
-$$
-Area(R) = II(R.d) - II(R.c) - II(R.b) + II(R.a)
-$$
+
+$$Area(R) = II(R.d) - II(R.c) - II(R.b) + II(R.a)$$
+
 <img src="./assets/ii computation.png" alt="Untitled Diagram-3" style="zoom:80%;" />
 
 That was the key for its usage in real-time face detection. 
@@ -65,7 +65,7 @@ The calculation of the II offers that acceleration over the calculation of area 
 
 During the training of the *Cascade Classifier*, to improve accuracy, its filters used the variance calculation of the pixel values in the window they were evaluating to weight their thresholds. Thus, together with the *Integral Image*, another matrix called the ***Squared Integral Image*** is constructed, consistono of the squared pixels values, with the same properties of the II (to speed-up the variance calculation as well).
 
-In order to use the *Cascade Classifier*, that was derivied from training on images $(24 \times 24)$​​, and detect faces at any scaling factor in the image, the original image is resized at various factors until the virtual window size is larger than the image, which is actually is when the resized image has one of the dimensions less than 24 pixels. That operation is called ***Image Pyramid*** creation.
+In order to use the *Cascade Classifier*, that was derivied from training on images $(24 \times 24)$, and detect faces at any scaling factor in the image, the original image is resized at various factors until the virtual window size is larger than the image, which is actually is when the resized image has one of the dimensions less than 24 pixels. That operation is called ***Image Pyramid*** creation.
 
 ------
 
@@ -81,21 +81,20 @@ In particular, the strategies used to find the tasks that can be parallelized co
 4. Compute the Image Pyramid: scale the image for each iteration;
    1. Construction of the Integral Image and the Squared Integral Image;
    2. Execution of the Cascade Classifier for each window in the image;
-   3. Retrieve the results.
-5. Group the results to merge the similar ones;
-6. Draw a bounding box for each result in the image;
-7. Write the output.
+5. Retrieve the results.
+6. Group the results to merge the similar ones;
+7. Draw a bounding box for each result in the image;
+8. Write the output.
 
-As is obvious to notice, the steps that offers the greatest opportunities for parallelization are those in the 4. and 2.; the last one because the greyscale conversion is applied independently pixel-wise. Each optimization step will be fully described later. 
+As is obvious to notice, the steps that offers the greatest opportunities for parallelization are those in the 4., 5. and 2.; the last one because the greyscale conversion is applied independently pixel-wise. Each optimization step will be fully described later. 
 
 #### Conversion from RGB to greyscale
 
 The image format that the program can handle is the BitMap format, where the explicit definition of the pixels values does not require any particular decoding step. Because of its nature, reading this file allows the images to be loaded as matrices of pixels, so evaluation can be made with simple indexed access to the matrices.
 
 The conversion of an image from an RGB (Red-Green-Blue) colour type to a greyscale one can be performed by applying the luminance formula:
-$$
-grey(p) = 0.3 \cdot red(p) + 0.59 \cdot green(p) + 0.11 \cdot blue(p)
-$$
+
+$$grey(p) = 0.3 \cdot red(p) + 0.59 \cdot green(p) + 0.11 \cdot blue(p)$$
 where $p$ is a pixel.
 
 Considering that the greyscale value of a pixel is calculated with only its three colour components, the task can be performed by associating a CUDA thread to each pixel, resulting in a huge improvement in terms of calculation time.
@@ -104,24 +103,21 @@ Considering that the greyscale value of a pixel is calculated with only its thre
 
 In the sequential version a simple loop is used for each iteration, within which the scaling factor is derived and the tasks are executed. For purpose of parallelization, it should be noted that each iteration (which we recall consists of constructing the Integral Images, applying the classifier and retreiving the results) is independent from the others. This makes this phase the ideal scenario for applying the potential offered by CUDA.
 
-By introducing *Dynamic Parallelism* we are able to execute the kernels of each iteration at the same time, this leads to the reduction of the total time of this phase to the time required by the single first iteration, which is, of course, the longes, as it is the one with the lowest scaling factor. Considering that the *Dynamic Parallelism* allows the execution of up to 32 task queues, we have the possibility of executing up to 32 algorithm iterations at the same time. In order to handle input images that needs more than 32 iterations (a difficult case due to the size required to reach this limit), the flow assigned to each of them is obtained by $\#iteration \mod{32}$.
+By introducing *Dynamic Parallelism* we are able to execute the kernels of each iteration at the same time, this leads to the reduction of the total time of this phase to the time required by the single first iteration, which is, of course, the longes, as it is the one with the lowest scaling factor. Considering that the *Dynamic Parallelism* allows the execution of up to 32 task queues, we have the possibility of executing up to 32 algorithm iterations at the same time. In order to handle input images that needs more than 32 iterations (a difficult case due to the size required to reach this limit), the flow assigned to each of them is obtained by $iteration \mod{32}$.
 
 In any case, the parallel algorithm provides only the streams that are needed for the execution: they are defined as an array of *CudaStream*, and the size of this array depends on the number of iterations needed, that can be calculated a-priori by the following formula:
-$$
-\#iterations = \left\lfloor \frac {\log(\frac{maxWindow}{24})} {\log(factor)} \right\rfloor \\
-\#streams = \min \{ \#iterations, \ 32 \}
-$$
+
+$$ iterations = \left\lfloor \frac {\log(\frac{maxWindow}{24})} {\log(factor)} \right\rfloor \\ streams = \min \{ iterations, \ 32 \} $$
 
 #### Build of the Integral Image and Squared Integral Image
 
 In the proposed implementation, the image resizing for the Image Pyramid construction is not done explicitly, it is done indirectly during the Integral Image construction step: the pixel value reading is done with a Nearest Neighborhood strategy by computing the pixel coordinates in the image in the image from the coordinates of the current cell in the Integral Images scaled by the resizing factor of the current iteration. With this appoach, there is no need to instantiate a new image just to calculate the integral images (note: this happens in both sequential and parallel versions).
 
 In the sequential algorithm, Integral and Squared Integral Images are constructed using a  dynamic programming approach:
-$$
-II(x,y) = II(x-1,y) + II(x,y-1) + p(x,y) \\
-SqII(x,y) = II(x-1,y) + II(x,y-1) + p(x,y)^2
-$$
-where $II$​ is the Integral Image, $SqII$ is the Squared Integral Image and $p$​​ is the image. This solution creates the integral images in a quadratic time. 
+
+$$ II(x,y) = II(x-1,y) + II(x,y-1) + p(x,y) \\ SqII(x,y) = II(x-1,y) + II(x,y-1) + p(x,y)^2 $$
+
+where $II$ is the Integral Image, $SqII$ is the Squared Integral Image and $p$ is the image. This solution creates the integral images in a quadratic time. 
 
 The parallel version of this algorithm attempts to make the calculation as independent as possible by dividing the task in two phases: a cumulative sum along the rows of the image pixel values, and then the cumulative sum along the columns of the values previously obtained. The two CUDA kernels can therefore be defined to map one thread per row for the first phase, and on thread per column for the second phase.
 
